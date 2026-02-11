@@ -47,6 +47,13 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
             }.collect { result ->
                 val today = LocalDate.now()
                 val month = _uiState.value.selectedMonth
+                val simulatedAsOfDate = result.plannedTrips.maxOfOrNull { it.exitDate }?.let { maxOf(today, it) }
+                val simulatedUsedDays = simulatedAsOfDate?.let {
+                    calculator.usedDaysOn(it, result.stays, result.plannedTrips)
+                }
+                val simulatedAvailableDays = simulatedAsOfDate?.let {
+                    calculator.availableDaysOn(it, result.stays, result.plannedTrips)
+                }
                 _uiState.update {
                     it.copy(
                         profiles = result.profiles,
@@ -56,6 +63,9 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
                         today = today,
                         usedDays = calculator.usedDaysOn(today, result.stays),
                         availableDays = calculator.availableDaysOn(today, result.stays),
+                        simulatedUsedDays = simulatedUsedDays,
+                        simulatedAvailableDays = simulatedAvailableDays,
+                        simulatedAsOfDate = simulatedAsOfDate,
                         nextRecoveryDate = calculator.nextDateWithMoreAvailability(today, result.stays),
                         highlightedDays = calculator.occupiedDaysInMonth(month, result.stays),
                         plannedHighlightedDays = calculator.plannedDaysInMonth(month, result.plannedTrips),

@@ -104,6 +104,9 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
                 MetricsCard(
                     usedDays = state.usedDays,
                     availableDays = state.availableDays,
+                    simulatedUsedDays = state.simulatedUsedDays,
+                    simulatedAvailableDays = state.simulatedAvailableDays,
+                    simulatedAsOfDate = state.simulatedAsOfDate?.format(formatter),
                     nextRecoveryDate = state.nextRecoveryDate?.format(formatter) ?: "No recovery in forecast",
                     overstayDate = state.firstPlannedOverstayDate?.format(formatter)
                 )
@@ -323,12 +326,26 @@ private fun ProfileCard(
 }
 
 @Composable
-private fun MetricsCard(usedDays: Int, availableDays: Int, nextRecoveryDate: String, overstayDate: String?) {
+private fun MetricsCard(
+    usedDays: Int,
+    availableDays: Int,
+    simulatedUsedDays: Int?,
+    simulatedAvailableDays: Int?,
+    simulatedAsOfDate: String?,
+    nextRecoveryDate: String,
+    overstayDate: String?
+) {
     Card {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("90/180 status", style = MaterialTheme.typography.titleMedium)
             Text("Days used in current 180-day window: $usedDays")
             Text("Days available now: $availableDays", fontWeight = FontWeight.SemiBold)
+            if (simulatedAvailableDays != null && simulatedUsedDays != null && simulatedAsOfDate != null) {
+                HorizontalDivider()
+                Text("After planned trips (as of $simulatedAsOfDate):", fontWeight = FontWeight.SemiBold)
+                Text("Used days: $simulatedUsedDays")
+                Text("Days left: $simulatedAvailableDays")
+            }
             HorizontalDivider()
             Text("First next date more days are available: $nextRecoveryDate")
             Text(
