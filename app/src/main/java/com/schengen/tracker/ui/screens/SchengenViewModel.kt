@@ -47,12 +47,24 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
             }.collect { result ->
                 val today = LocalDate.now()
                 val month = _uiState.value.selectedMonth
+                val hasPlannedTrips = result.plannedTrips.isNotEmpty()
                 val simulatedAsOfDate = result.plannedTrips.maxOfOrNull { it.exitDate }?.let { maxOf(today, it) }
-                val simulatedUsedDays = simulatedAsOfDate?.let {
+                val projectedUsedDaysToday = if (hasPlannedTrips) {
+                    calculator.usedDaysOn(today, result.stays, result.plannedTrips)
+                } else null
+                val projectedAvailableDaysToday = if (hasPlannedTrips) {
+                    calculator.availableDaysOn(today, result.stays, result.plannedTrips)
+                } else null
+                val projectedDeltaDaysToday = projectedAvailableDaysToday?.let { it - calculator.availableDaysOn(today, result.stays) }
+                val simulatedUsedDaysAtPlanEnd = simulatedAsOfDate?.let {
                     calculator.usedDaysOn(it, result.stays, result.plannedTrips)
                 }
-                val simulatedAvailableDays = simulatedAsOfDate?.let {
+                val simulatedAvailableDaysAtPlanEnd = simulatedAsOfDate?.let {
                     calculator.availableDaysOn(it, result.stays, result.plannedTrips)
+                }
+                val simulatedDeltaDaysAtPlanEnd = simulatedAsOfDate?.let {
+                    calculator.availableDaysOn(it, result.stays, result.plannedTrips) -
+                        calculator.availableDaysOn(it, result.stays)
                 }
                 _uiState.update {
                     it.copy(
@@ -63,8 +75,12 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
                         today = today,
                         usedDays = calculator.usedDaysOn(today, result.stays),
                         availableDays = calculator.availableDaysOn(today, result.stays),
-                        simulatedUsedDays = simulatedUsedDays,
-                        simulatedAvailableDays = simulatedAvailableDays,
+                        projectedUsedDaysToday = projectedUsedDaysToday,
+                        projectedAvailableDaysToday = projectedAvailableDaysToday,
+                        projectedDeltaDaysToday = projectedDeltaDaysToday,
+                        simulatedUsedDaysAtPlanEnd = simulatedUsedDaysAtPlanEnd,
+                        simulatedAvailableDaysAtPlanEnd = simulatedAvailableDaysAtPlanEnd,
+                        simulatedDeltaDaysAtPlanEnd = simulatedDeltaDaysAtPlanEnd,
                         simulatedAsOfDate = simulatedAsOfDate,
                         nextRecoveryDate = calculator.nextDateWithMoreAvailability(today, result.stays),
                         highlightedDays = calculator.occupiedDaysInMonth(month, result.stays),

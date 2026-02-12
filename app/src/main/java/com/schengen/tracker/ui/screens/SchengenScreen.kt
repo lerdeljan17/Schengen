@@ -104,8 +104,12 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
                 MetricsCard(
                     usedDays = state.usedDays,
                     availableDays = state.availableDays,
-                    simulatedUsedDays = state.simulatedUsedDays,
-                    simulatedAvailableDays = state.simulatedAvailableDays,
+                    projectedUsedDaysToday = state.projectedUsedDaysToday,
+                    projectedAvailableDaysToday = state.projectedAvailableDaysToday,
+                    projectedDeltaDaysToday = state.projectedDeltaDaysToday,
+                    simulatedUsedDaysAtPlanEnd = state.simulatedUsedDaysAtPlanEnd,
+                    simulatedAvailableDaysAtPlanEnd = state.simulatedAvailableDaysAtPlanEnd,
+                    simulatedDeltaDaysAtPlanEnd = state.simulatedDeltaDaysAtPlanEnd,
                     simulatedAsOfDate = state.simulatedAsOfDate?.format(formatter),
                     nextRecoveryDate = state.nextRecoveryDate?.format(formatter) ?: "No recovery in forecast",
                     overstayDate = state.firstPlannedOverstayDate?.format(formatter)
@@ -329,8 +333,12 @@ private fun ProfileCard(
 private fun MetricsCard(
     usedDays: Int,
     availableDays: Int,
-    simulatedUsedDays: Int?,
-    simulatedAvailableDays: Int?,
+    projectedUsedDaysToday: Int?,
+    projectedAvailableDaysToday: Int?,
+    projectedDeltaDaysToday: Int?,
+    simulatedUsedDaysAtPlanEnd: Int?,
+    simulatedAvailableDaysAtPlanEnd: Int?,
+    simulatedDeltaDaysAtPlanEnd: Int?,
     simulatedAsOfDate: String?,
     nextRecoveryDate: String,
     overstayDate: String?
@@ -340,11 +348,32 @@ private fun MetricsCard(
             Text("90/180 status", style = MaterialTheme.typography.titleMedium)
             Text("Days used in current 180-day window: $usedDays")
             Text("Days available now: $availableDays", fontWeight = FontWeight.SemiBold)
-            if (simulatedAvailableDays != null && simulatedUsedDays != null && simulatedAsOfDate != null) {
+            if (projectedAvailableDaysToday != null && projectedUsedDaysToday != null) {
                 HorizontalDivider()
-                Text("After planned trips (as of $simulatedAsOfDate):", fontWeight = FontWeight.SemiBold)
-                Text("Used days: $simulatedUsedDays")
-                Text("Days left: $simulatedAvailableDays")
+                Text("With planned trips included (today projection):", fontWeight = FontWeight.SemiBold)
+                Text("Used days: $projectedUsedDaysToday")
+                Text("Days left: $projectedAvailableDaysToday")
+                projectedDeltaDaysToday?.let {
+                    Text(
+                        "Impact vs confirmed-only: ${formatDelta(it)}",
+                        color = if (it <= 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            if (
+                simulatedAvailableDaysAtPlanEnd != null &&
+                simulatedUsedDaysAtPlanEnd != null &&
+                simulatedAsOfDate != null
+            ) {
+                Text("At latest planned exit ($simulatedAsOfDate):", fontWeight = FontWeight.SemiBold)
+                Text("Used days: $simulatedUsedDaysAtPlanEnd")
+                Text("Days left: $simulatedAvailableDaysAtPlanEnd")
+                simulatedDeltaDaysAtPlanEnd?.let {
+                    Text(
+                        "Impact at plan end: ${formatDelta(it)}",
+                        color = if (it <= 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                    )
+                }
             }
             HorizontalDivider()
             Text("First next date more days are available: $nextRecoveryDate")
@@ -436,3 +465,11 @@ private fun PlannedTripRow(trip: PlannedTrip, formatter: DateTimeFormatter, onDe
 
 private fun Long.toLocalDate(): LocalDate =
     Instant.ofEpochMilli(this).atZone(ZoneId.systemDefault()).toLocalDate()
+
+private fun formatDelta(value: Int): String {
+    return when {
+        value > 0 -> "+$value days"
+        value < 0 -> "$value days"
+        else -> "0 days"
+    }
+}
