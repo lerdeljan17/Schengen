@@ -23,8 +23,12 @@ class LocationTrackingWorker(
             applicationContext,
             Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
+        val hasCoarse = ContextCompat.checkSelfPermission(
+            applicationContext,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
 
-        if (!hasFine) return Result.retry()
+        if (!hasFine && !hasCoarse) return Result.retry()
 
         val fusedClient = LocationServices.getFusedLocationProviderClient(applicationContext)
         val location = runCatching {

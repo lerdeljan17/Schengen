@@ -1,6 +1,8 @@
 package com.schengen.tracker.ui.screens
 
 import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -24,6 +26,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -33,9 +37,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.schengen.tracker.domain.PlannedTrip
 import com.schengen.tracker.domain.Profile
@@ -47,12 +54,14 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 private enum class PickerMode { ENTRY, EXIT, PLANNED_ENTRY, PLANNED_EXIT }
+private enum class AppTab { MAIN, HISTORY, PLANNED, TOOLS }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
     val state by vm.uiState.collectAsState()
     val formatter = remember { DateTimeFormatter.ofPattern("dd MMM yyyy") }
+    val context = LocalContext.current
 
     var pickerMode by remember { mutableStateOf<PickerMode?>(null) }
     var pendingPlannedEntry by remember { mutableStateOf<LocalDate?>(null) }
@@ -62,12 +71,14 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
     var showAddProfileDialog by remember { mutableStateOf(false) }
     var newProfileName by remember { mutableStateOf("") }
     var newPassport by remember { mutableStateOf("") }
+    var selectedTab by rememberSaveable { mutableStateOf(AppTab.MAIN.ordinal) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         val fine = results[Manifest.permission.ACCESS_FINE_LOCATION] == true
-        vm.setLocationTracking(fine)
+        val coarse = results[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        vm.setLocationTracking(fine || coarse)
     }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -85,161 +96,184 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
     val pickerState = rememberDatePickerState(initialSelectedDateMillis = System.currentTimeMillis())
 
     Column(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item {
-                ProfileCard(
-                    profiles = state.profiles,
-                    activeProfileId = state.activeProfileId,
-                    onSelect = vm::selectProfile,
-                    onAddProfile = { showAddProfileDialog = true }
-                )
-            }
+        TabRow(selectedTabIndex = selectedTab) {
+            Tab(selected = selectedTab == AppTab.MAIN.ordinal, onClick = { selectedTab = AppTab.MAIN.ordinal }, text = { Text("Main") })
+            Tab(selected = selectedTab == AppTab.HISTORY.ordinal, onClick = { selectedTab = AppTab.HISTORY.ordinal }, text = { Text("History") })
+            Tab(selected = selectedTab == AppTab.PLANNED.ordinal, onClick = { selectedTab = AppTab.PLANNED.ordinal }, text = { Text("Planned") })
+            Tab(selected = selectedTab == AppTab.TOOLS.ordinal, onClick = { selectedTab = AppTab.TOOLS.ordinal }, text = { Text("Tools") })
+        }
 
-            item {
-                MetricsCard(
-                    usedDays = state.usedDays,
-                    availableDays = state.availableDays,
-                    projectedUsedDaysToday = state.projectedUsedDaysToday,
-                    projectedAvailableDaysToday = state.projectedAvailableDaysToday,
-                    projectedDeltaDaysToday = state.projectedDeltaDaysToday,
-                    simulatedUsedDaysAtPlanEnd = state.simulatedUsedDaysAtPlanEnd,
-                    simulatedAvailableDaysAtPlanEnd = state.simulatedAvailableDaysAtPlanEnd,
-                    simulatedDeltaDaysAtPlanEnd = state.simulatedDeltaDaysAtPlanEnd,
-                    simulatedAsOfDate = state.simulatedAsOfDate?.format(formatter),
-                    nextRecoveryDate = state.nextRecoveryDate?.format(formatter) ?: "No recovery in forecast",
-                    overstayDate = state.firstPlannedOverstayDate?.format(formatter)
-                )
-            }
-
-            item {
-                DataToolsCard(
-                    message = state.importExportMessage,
-                    onExport = {
-                        val date = LocalDate.now()
-                        exportLauncher.launch("schengen-data-${date}.csv")
-                    },
-                    onImport = { importLauncher.launch(arrayOf("text/*", "text/csv", "application/csv")) }
-                )
-            }
-
-            item {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Automatic detection", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "Background checks auto-add entry/exit records from your location.",
-                            style = MaterialTheme.typography.bodySmall
+        when (selectedTab) {
+            AppTab.MAIN.ordinal -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item {
+                        MetricsCard(
+                            usedDays = state.usedDays,
+                            availableDays = state.availableDays,
+                            projectedUsedDaysToday = state.projectedUsedDaysToday,
+                            projectedAvailableDaysToday = state.projectedAvailableDaysToday,
+                            projectedDeltaDaysToday = state.projectedDeltaDaysToday,
+                            simulatedUsedDaysAtPlanEnd = state.simulatedUsedDaysAtPlanEnd,
+                            simulatedAvailableDaysAtPlanEnd = state.simulatedAvailableDaysAtPlanEnd,
+                            simulatedDeltaDaysAtPlanEnd = state.simulatedDeltaDaysAtPlanEnd,
+                            simulatedAsOfDate = state.simulatedAsOfDate?.format(formatter),
+                            nextRecoveryDate = state.nextRecoveryDate?.format(formatter) ?: "No recovery in forecast",
+                            overstayDate = state.firstPlannedOverstayDate?.format(formatter)
                         )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Location tracking", fontWeight = FontWeight.SemiBold)
-                            Switch(
-                                checked = state.locationTrackingEnabled,
-                                onCheckedChange = { enabled ->
-                                    if (enabled) {
-                                        val permissions = buildList {
-                                            add(Manifest.permission.ACCESS_FINE_LOCATION)
-                                            add(Manifest.permission.ACCESS_COARSE_LOCATION)
-                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                                add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-                                            }
-                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                                add(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                    item {
+                        Card {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    TextButton(onClick = vm::previousMonth) { Text("Prev") }
+                                    Text(
+                                        state.selectedMonth.month.name.lowercase().replaceFirstChar { it.uppercase() } + " ${state.selectedMonth.year}",
+                                        style = MaterialTheme.typography.titleMedium
+                                    )
+                                    TextButton(onClick = vm::nextMonth) { Text("Next") }
+                                }
+                                MonthCalendar(
+                                    month = state.selectedMonth,
+                                    occupiedDays = state.highlightedDays,
+                                    plannedDays = state.plannedHighlightedDays
+                                )
+                                Text(
+                                    "Green = confirmed stay days, gold = planned trip days",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
+                    item { Spacer(modifier = Modifier.padding(bottom = 20.dp)) }
+                }
+            }
+            AppTab.HISTORY.ordinal -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item {
+                        Card {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Manual stays", style = MaterialTheme.typography.titleMedium)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = { pickerMode = PickerMode.ENTRY }) { Text("Add entry") }
+                                    Button(onClick = { pickerMode = PickerMode.EXIT }) { Text("Add exit") }
+                                }
+                                state.validationMessage?.let {
+                                    Text(text = it, color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                    item {
+                        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Automatic detection", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    "Background checks auto-add entry/exit records from your location.",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Location tracking", fontWeight = FontWeight.SemiBold)
+                                    Switch(
+                                        checked = state.locationTrackingEnabled,
+                                        onCheckedChange = { enabled ->
+                                            if (enabled) {
+                                                if (hasForegroundLocationPermission(context)) {
+                                                    vm.setLocationTracking(true)
+                                                } else {
+                                                    val permissions = buildList {
+                                                        add(Manifest.permission.ACCESS_FINE_LOCATION)
+                                                        add(Manifest.permission.ACCESS_COARSE_LOCATION)
+                                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                                            add(Manifest.permission.POST_NOTIFICATIONS)
+                                                        }
+                                                    }
+                                                    permissionLauncher.launch(permissions.toTypedArray())
+                                                }
+                                            } else {
+                                                vm.setLocationTracking(false)
                                             }
                                         }
-                                        permissionLauncher.launch(permissions.toTypedArray())
-                                    } else {
-                                        vm.setLocationTracking(false)
-                                    }
+                                    )
                                 }
-                            )
+                            }
                         }
                     }
+                    item { Text("Stay history", style = MaterialTheme.typography.titleMedium) }
+                    items(state.stays, key = { it.id }) { stay ->
+                        StayRow(stay = stay, formatter = formatter, onDelete = { vm.deleteStay(stay.id) })
+                    }
+                    item { Spacer(modifier = Modifier.padding(bottom = 20.dp)) }
                 }
             }
-
-            item {
-                Card {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Manual stays", style = MaterialTheme.typography.titleMedium)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { pickerMode = PickerMode.ENTRY }) { Text("Add entry") }
-                            Button(onClick = { pickerMode = PickerMode.EXIT }) { Text("Add exit") }
-                        }
-                        state.validationMessage?.let {
-                            Text(text = it, color = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                }
-            }
-
-            item {
-                PlannedTripsCard(
-                    plannedEntry = pendingPlannedEntry,
-                    plannedExit = pendingPlannedExit,
-                    note = plannedNote,
-                    onPickEntry = { pickerMode = PickerMode.PLANNED_ENTRY },
-                    onPickExit = { pickerMode = PickerMode.PLANNED_EXIT },
-                    onNoteChange = { plannedNote = it },
-                    onAdd = {
-                        val entry = pendingPlannedEntry
-                        val exit = pendingPlannedExit
-                        if (entry != null && exit != null) {
-                            vm.addPlannedTrip(entry, exit, plannedNote)
-                            pendingPlannedEntry = null
-                            pendingPlannedExit = null
-                            plannedNote = ""
-                        }
-                    }
-                )
-            }
-
-            item {
-                Card {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            TextButton(onClick = vm::previousMonth) { Text("Prev") }
-                            Text(
-                                state.selectedMonth.month.name.lowercase().replaceFirstChar { it.uppercase() } + " ${state.selectedMonth.year}",
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            TextButton(onClick = vm::nextMonth) { Text("Next") }
-                        }
-                        MonthCalendar(
-                            month = state.selectedMonth,
-                            occupiedDays = state.highlightedDays,
-                            plannedDays = state.plannedHighlightedDays
-                        )
-                        Text(
-                            "Green = confirmed stay days, gold = planned trip days",
-                            style = MaterialTheme.typography.bodySmall
+            AppTab.PLANNED.ordinal -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item {
+                        PlannedTripsCard(
+                            plannedEntry = pendingPlannedEntry,
+                            plannedExit = pendingPlannedExit,
+                            note = plannedNote,
+                            onPickEntry = { pickerMode = PickerMode.PLANNED_ENTRY },
+                            onPickExit = { pickerMode = PickerMode.PLANNED_EXIT },
+                            onNoteChange = { plannedNote = it },
+                            onAdd = {
+                                val entry = pendingPlannedEntry
+                                val exit = pendingPlannedExit
+                                if (entry != null && exit != null) {
+                                    vm.addPlannedTrip(entry, exit, plannedNote)
+                                    pendingPlannedEntry = null
+                                    pendingPlannedExit = null
+                                    plannedNote = ""
+                                }
+                            }
                         )
                     }
+                    item { Text("Planned trips", style = MaterialTheme.typography.titleMedium) }
+                    items(state.plannedTrips, key = { it.id }) { trip ->
+                        PlannedTripRow(trip = trip, formatter = formatter, onDelete = { vm.deletePlannedTrip(trip.id) })
+                    }
+                    item { Spacer(modifier = Modifier.padding(bottom = 20.dp)) }
                 }
             }
-
-            item { Text("Planned trips", style = MaterialTheme.typography.titleMedium) }
-            items(state.plannedTrips, key = { it.id }) { trip ->
-                PlannedTripRow(trip = trip, formatter = formatter, onDelete = { vm.deletePlannedTrip(trip.id) })
-            }
-
-            item { Text("Stay history", style = MaterialTheme.typography.titleMedium) }
-            items(state.stays, key = { it.id }) { stay ->
-                StayRow(stay = stay, formatter = formatter, onDelete = { vm.deleteStay(stay.id) })
-            }
-
-            item {
-                Spacer(modifier = Modifier.padding(bottom = 20.dp))
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item {
+                        DataToolsCard(
+                            message = state.importExportMessage,
+                            onExport = {
+                                val date = LocalDate.now()
+                                exportLauncher.launch("schengen-data-${date}.csv")
+                            },
+                            onImport = { importLauncher.launch(arrayOf("text/*", "text/csv", "application/csv")) }
+                        )
+                    }
+                    item {
+                        ProfileCard(
+                            profiles = state.profiles,
+                            activeProfileId = state.activeProfileId,
+                            onSelect = vm::selectProfile,
+                            onAddProfile = { showAddProfileDialog = true }
+                        )
+                    }
+                    item { Spacer(modifier = Modifier.padding(bottom = 20.dp)) }
+                }
             }
         }
     }
@@ -472,4 +506,16 @@ private fun formatDelta(value: Int): String {
         value < 0 -> "$value days"
         else -> "0 days"
     }
+}
+
+private fun hasForegroundLocationPermission(context: Context): Boolean {
+    val hasFine = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_FINE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+    val hasCoarse = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_COARSE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+    return hasFine || hasCoarse
 }
