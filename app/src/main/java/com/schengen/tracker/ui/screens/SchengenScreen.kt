@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.schengen.tracker.data.EntrySource
 import com.schengen.tracker.domain.PlannedTrip
 import com.schengen.tracker.domain.Profile
 import com.schengen.tracker.domain.Stay
@@ -80,6 +81,9 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
     var showAddProfileDialog by remember { mutableStateOf(false) }
     var newProfileName by remember { mutableStateOf("") }
     var newPassport by remember { mutableStateOf("") }
+    var editingStay by remember { mutableStateOf<Stay?>(null) }
+    var editingPlannedTrip by remember { mutableStateOf<PlannedTrip?>(null) }
+    var editingProfile by remember { mutableStateOf<Profile?>(null) }
     val tabs = remember { AppTab.values() }
     val pagerState = rememberPagerState(
         initialPage = AppTab.MAIN.ordinal,
@@ -241,7 +245,11 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
                         }
                         item { Text("Stay history", style = MaterialTheme.typography.titleMedium) }
                         items(state.stays, key = { it.id }) { stay ->
-                            StayRow(stay = stay, formatter = formatter, onDelete = { vm.deleteStay(stay.id) })
+                            StayRow(
+                                stay = stay,
+                                formatter = formatter,
+                                onClick = { editingStay = stay }
+                            )
                         }
                         item { Spacer(modifier = Modifier.padding(bottom = 20.dp)) }
                     }
@@ -273,7 +281,11 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
                         }
                         item { Text("Planned trips", style = MaterialTheme.typography.titleMedium) }
                         items(state.plannedTrips, key = { it.id }) { trip ->
-                            PlannedTripRow(trip = trip, formatter = formatter, onDelete = { vm.deletePlannedTrip(trip.id) })
+                            PlannedTripRow(
+                                trip = trip,
+                                formatter = formatter,
+                                onClick = { editingPlannedTrip = trip }
+                            )
                         }
                         item { Spacer(modifier = Modifier.padding(bottom = 20.dp)) }
                     }
@@ -298,7 +310,8 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
                                 profiles = state.profiles,
                                 activeProfileId = state.activeProfileId,
                                 onSelect = vm::selectProfile,
-                                onAddProfile = { showAddProfileDialog = true }
+                                onAddProfile = { showAddProfileDialog = true },
+                                onEditProfile = { editingProfile = it }
                             )
                         }
                         item { Spacer(modifier = Modifier.padding(bottom = 20.dp)) }
@@ -363,6 +376,52 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
             }
         )
     }
+
+    editingStay?.let { stay ->
+        EditStayDialog(
+            stay = stay,
+            onDismiss = { editingStay = null },
+            onSave = { entryDate, exitDate, source ->
+                vm.updateStay(stay.id, entryDate, exitDate, source)
+                editingStay = null
+            },
+            onDelete = {
+                vm.deleteStay(stay.id)
+                editingStay = null
+            }
+        )
+    }
+
+    editingPlannedTrip?.let { trip ->
+        EditPlannedTripDialog(
+            trip = trip,
+            onDismiss = { editingPlannedTrip = null },
+            onSave = { entryDate, exitDate, note ->
+                vm.updatePlannedTrip(trip.id, entryDate, exitDate, note)
+                editingPlannedTrip = null
+            },
+            onDelete = {
+                vm.deletePlannedTrip(trip.id)
+                editingPlannedTrip = null
+            }
+        )
+    }
+
+    editingProfile?.let { profile ->
+        EditProfileDialog(
+            profile = profile,
+            isActive = profile.id == state.activeProfileId,
+            onDismiss = { editingProfile = null },
+            onSave = { name, passportNumber ->
+                vm.updateProfile(profile.id, name, passportNumber)
+                editingProfile = null
+            },
+            onDelete = {
+                vm.deleteProfile(profile.id)
+                editingProfile = null
+            }
+        )
+    }
 }
 
 @Composable
@@ -370,7 +429,8 @@ private fun ProfileCard(
     profiles: List<Profile>,
     activeProfileId: Long?,
     onSelect: (Long) -> Unit,
-    onAddProfile: () -> Unit
+    onAddProfile: () -> Unit,
+    onEditProfile: (Profile) -> Unit
 ) {
     Card {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -380,10 +440,26 @@ private fun ProfileCard(
             } else {
                 profiles.forEach { profile ->
                     val selected = profile.id == activeProfileId
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("${profile.name} ${if (profile.passportNumber.isNotBlank()) "(${profile.passportNumber})" else ""}")
-                        TextButton(onClick = { onSelect(profile.id) }) {
-                            Text(if (selected) "Active" else "Use")
+                    Card(
+                        onClick = { onEditProfile(profile) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                "${profile.name} ${
+                                    if (profile.passportNumber.isNotBlank()) "(${profile.passportNumber})" else ""
+                                }"
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                TextButton(onClick = { onEditProfile(profile) }) { Text("Edit") }
+                                TextButton(onClick = { onSelect(profile.id) }) {
+                                    Text(if (selected) "Active" else "Use")
+                                }
+                            }
                         }
                     }
                 }
@@ -504,28 +580,237 @@ private fun PlannedTripsCard(
 }
 
 @Composable
-private fun StayRow(stay: Stay, formatter: DateTimeFormatter, onDelete: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+private fun StayRow(stay: Stay, formatter: DateTimeFormatter, onClick: () -> Unit) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Entry: ${stay.entryDate.format(formatter)}")
             Text("Exit: ${stay.exitDate?.format(formatter) ?: "Open"}")
             Text("Source: ${stay.source.name}")
-            TextButton(onClick = onDelete) { Text("Delete") }
+            TextButton(onClick = onClick) { Text("Edit") }
         }
     }
 }
 
 @Composable
-private fun PlannedTripRow(trip: PlannedTrip, formatter: DateTimeFormatter, onDelete: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+private fun PlannedTripRow(trip: PlannedTrip, formatter: DateTimeFormatter, onClick: () -> Unit) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Entry: ${trip.entryDate.format(formatter)}")
             Text("Exit: ${trip.exitDate.format(formatter)}")
             if (trip.note.isNotBlank()) Text("Note: ${trip.note}")
-            TextButton(onClick = onDelete) { Text("Delete") }
+            TextButton(onClick = onClick) { Text("Edit") }
         }
     }
 }
+
+@Composable
+private fun EditStayDialog(
+    stay: Stay,
+    onDismiss: () -> Unit,
+    onSave: (entryDate: LocalDate, exitDate: LocalDate?, source: EntrySource) -> Unit,
+    onDelete: () -> Unit
+) {
+    var entryDateText by remember(stay.id) { mutableStateOf(stay.entryDate.toString()) }
+    var hasExitDate by remember(stay.id) { mutableStateOf(stay.exitDate != null) }
+    var exitDateText by remember(stay.id) { mutableStateOf(stay.exitDate?.toString().orEmpty()) }
+    var source by remember(stay.id) { mutableStateOf(stay.source) }
+    var errorMessage by remember(stay.id) { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                val entry = parseIsoDate(entryDateText)
+                if (entry == null) {
+                    errorMessage = "Entry date must use YYYY-MM-DD."
+                    return@TextButton
+                }
+                val exit = if (!hasExitDate) null else {
+                    val parsedExit = parseIsoDate(exitDateText)
+                    if (parsedExit == null) {
+                        errorMessage = "Exit date must use YYYY-MM-DD."
+                        return@TextButton
+                    }
+                    if (parsedExit.isBefore(entry)) {
+                        errorMessage = "Exit date cannot be before entry date."
+                        return@TextButton
+                    }
+                    parsedExit
+                }
+                errorMessage = null
+                onSave(entry, exit, source)
+            }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+        title = { Text("Edit stay history") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = entryDateText,
+                    onValueChange = { entryDateText = it },
+                    label = { Text("Entry date (YYYY-MM-DD)") },
+                    singleLine = true
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Has exit date")
+                    Switch(
+                        checked = hasExitDate,
+                        onCheckedChange = { enabled ->
+                            hasExitDate = enabled
+                            if (!enabled) exitDateText = ""
+                        }
+                    )
+                }
+                if (hasExitDate) {
+                    OutlinedTextField(
+                        value = exitDateText,
+                        onValueChange = { exitDateText = it },
+                        label = { Text("Exit date (YYYY-MM-DD)") },
+                        singleLine = true
+                    )
+                }
+                Text("Source", fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { source = EntrySource.MANUAL },
+                        enabled = source != EntrySource.MANUAL
+                    ) { Text("Manual") }
+                    Button(
+                        onClick = { source = EntrySource.AUTO },
+                        enabled = source != EntrySource.AUTO
+                    ) { Text("Auto") }
+                }
+                TextButton(onClick = onDelete) { Text("Delete stay") }
+                errorMessage?.let { Text(text = it, color = MaterialTheme.colorScheme.error) }
+            }
+        }
+    )
+}
+
+@Composable
+private fun EditPlannedTripDialog(
+    trip: PlannedTrip,
+    onDismiss: () -> Unit,
+    onSave: (entryDate: LocalDate, exitDate: LocalDate, note: String) -> Unit,
+    onDelete: () -> Unit
+) {
+    var entryDateText by remember(trip.id) { mutableStateOf(trip.entryDate.toString()) }
+    var exitDateText by remember(trip.id) { mutableStateOf(trip.exitDate.toString()) }
+    var noteText by remember(trip.id) { mutableStateOf(trip.note) }
+    var errorMessage by remember(trip.id) { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                val entry = parseIsoDate(entryDateText)
+                val exit = parseIsoDate(exitDateText)
+                when {
+                    entry == null -> errorMessage = "Entry date must use YYYY-MM-DD."
+                    exit == null -> errorMessage = "Exit date must use YYYY-MM-DD."
+                    exit.isBefore(entry) -> errorMessage = "Exit date cannot be before entry date."
+                    else -> {
+                        errorMessage = null
+                        onSave(entry, exit, noteText)
+                    }
+                }
+            }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+        title = { Text("Edit planned trip") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = entryDateText,
+                    onValueChange = { entryDateText = it },
+                    label = { Text("Entry date (YYYY-MM-DD)") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = exitDateText,
+                    onValueChange = { exitDateText = it },
+                    label = { Text("Exit date (YYYY-MM-DD)") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = noteText,
+                    onValueChange = { noteText = it },
+                    label = { Text("Note") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                TextButton(onClick = onDelete) { Text("Delete planned trip") }
+                errorMessage?.let { Text(text = it, color = MaterialTheme.colorScheme.error) }
+            }
+        }
+    )
+}
+
+@Composable
+private fun EditProfileDialog(
+    profile: Profile,
+    isActive: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (name: String, passportNumber: String) -> Unit,
+    onDelete: () -> Unit
+) {
+    var nameText by remember(profile.id) { mutableStateOf(profile.name) }
+    var passportText by remember(profile.id) { mutableStateOf(profile.passportNumber) }
+    var errorMessage by remember(profile.id) { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                if (nameText.isBlank()) {
+                    errorMessage = "Profile name is required."
+                    return@TextButton
+                }
+                errorMessage = null
+                onSave(nameText, passportText)
+            }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+        title = { Text(if (isActive) "Edit passport profile (Active)" else "Edit passport profile") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = nameText,
+                    onValueChange = { nameText = it },
+                    label = { Text("Profile name") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = passportText,
+                    onValueChange = { passportText = it },
+                    label = { Text("Passport number") },
+                    singleLine = true
+                )
+                TextButton(onClick = onDelete) { Text("Delete profile") }
+                errorMessage?.let { Text(text = it, color = MaterialTheme.colorScheme.error) }
+            }
+        }
+    )
+}
+
+private fun parseIsoDate(value: String): LocalDate? =
+    runCatching { LocalDate.parse(value.trim()) }.getOrNull()
 
 private fun Long.toLocalDate(): LocalDate =
     Instant.ofEpochMilli(this).atZone(ZoneId.systemDefault()).toLocalDate()

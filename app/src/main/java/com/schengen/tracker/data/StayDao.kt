@@ -28,7 +28,13 @@ interface StayDao {
     suspend fun insertPlannedTrip(trip: PlannedTripEntity): Long
 
     @Update
-    suspend fun update(stay: StayEntity)
+    suspend fun updateStay(stay: StayEntity)
+
+    @Update
+    suspend fun updatePlannedTrip(trip: PlannedTripEntity)
+
+    @Update
+    suspend fun updateProfile(profile: ProfileEntity)
 
     @Delete
     suspend fun delete(stay: StayEntity)
@@ -39,8 +45,23 @@ interface StayDao {
     @Query("DELETE FROM planned_trips WHERE id = :id")
     suspend fun deletePlannedTripById(id: Long)
 
+    @Query("DELETE FROM stays WHERE profileId = :profileId")
+    suspend fun deleteStaysByProfileId(profileId: Long)
+
+    @Query("DELETE FROM planned_trips WHERE profileId = :profileId")
+    suspend fun deletePlannedTripsByProfileId(profileId: Long)
+
+    @Query("DELETE FROM profiles WHERE id = :id")
+    suspend fun deleteProfileById(id: Long)
+
     @Query("SELECT * FROM stays WHERE profileId = :profileId AND exitDate IS NULL ORDER BY entryDate DESC LIMIT 1")
     suspend fun getLatestOpenStay(profileId: Long): StayEntity?
+
+    @Query("SELECT * FROM stays WHERE id = :id LIMIT 1")
+    suspend fun getStayById(id: Long): StayEntity?
+
+    @Query("SELECT * FROM planned_trips WHERE id = :id LIMIT 1")
+    suspend fun getPlannedTripById(id: Long): PlannedTripEntity?
 
     @Query("SELECT * FROM stays WHERE profileId = :profileId ORDER BY entryDate DESC")
     suspend fun getAllStays(profileId: Long): List<StayEntity>

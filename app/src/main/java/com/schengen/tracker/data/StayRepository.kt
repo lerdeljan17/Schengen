@@ -81,7 +81,7 @@ class StayRepository(
         val profileId = requireActiveProfileId() ?: return false
         val open = dao.getLatestOpenStay(profileId) ?: return false
         if (LocalDate.parse(open.entryDate).isAfter(exitDate)) return false
-        dao.update(open.copy(exitDate = exitDate.toString()))
+        dao.updateStay(open.copy(exitDate = exitDate.toString()))
         return true
     }
 
@@ -116,9 +116,58 @@ class StayRepository(
         if (!inSchengen && open != null) {
             val entry = LocalDate.parse(open.entryDate)
             if (!entry.isAfter(date)) {
-                dao.update(open.copy(exitDate = date.toString()))
+                dao.updateStay(open.copy(exitDate = date.toString()))
             }
         }
+    }
+
+    suspend fun updateStay(
+        id: Long,
+        entryDate: LocalDate,
+        exitDate: LocalDate?,
+        source: EntrySource
+    ): Boolean {
+        if (exitDate != null && exitDate.isBefore(entryDate)) return false
+        val stay = dao.getStayById(id) ?: return false
+        dao.updateStay(
+            stay.copy(
+                entryDate = entryDate.toString(),
+                exitDate = exitDate?.toString(),
+                source = source
+            )
+        )
+        return true
+    }
+
+    suspend fun updatePlannedTrip(
+        id: Long,
+        entryDate: LocalDate,
+        exitDate: LocalDate,
+        note: String
+    ): Boolean {
+        if (exitDate.isBefore(entryDate)) return false
+        val trip = dao.getPlannedTripById(id) ?: return false
+        dao.updatePlannedTrip(
+            trip.copy(
+                entryDate = entryDate.toString(),
+                exitDate = exitDate.toString(),
+                note = note.trim()
+            )
+        )
+        return true
+    }
+
+    suspend fun updateProfile(id: Long, name: String, passportNumber: String): Boolean {
+        val trimmedName = name.trim()
+        if (trimmedName.isBlank()) return false
+        val profile = dao.getProfileById(id) ?: return false
+        dao.updateProfile(
+            profile.copy(
+                name = trimmedName,
+                passportNumber = passportNumber.trim()
+            )
+        )
+        return true
     }
 
     suspend fun deleteStayById(id: Long) {
@@ -127,6 +176,20 @@ class StayRepository(
 
     suspend fun deletePlannedTripById(id: Long) {
         dao.deletePlannedTripById(id)
+    }
+
+    suspend fun deleteProfileById(id: Long): Boolean {
+        val existing = dao.getProfileById(id) ?: return false
+        dao.deleteStaysByProfileId(existing.id)
+        dao.deletePlannedTripsByProfileId(existing.id)
+        dao.deleteProfileById(existing.id)
+
+        val remaining = dao.getAllProfiles()
+        when {
+            remaining.isEmpty() -> ensureDefaultProfile()
+            activeProfileIdFlow.value == existing.id -> setActiveProfile(remaining.first().id)
+        }
+        return true
     }
 
     suspend fun exportCsv(writer: BufferedWriter) {

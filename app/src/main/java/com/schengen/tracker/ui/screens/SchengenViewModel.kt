@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.schengen.tracker.SchengenApp
 import com.schengen.tracker.alerts.AlertScheduler
+import com.schengen.tracker.data.EntrySource
 import com.schengen.tracker.data.StayRepository
 import com.schengen.tracker.domain.PlannedTrip
 import com.schengen.tracker.domain.Profile
@@ -149,6 +150,44 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
     fun deletePlannedTrip(id: Long) {
         viewModelScope.launch {
             repository.deletePlannedTripById(id)
+        }
+    }
+
+    fun updateStay(id: Long, entryDate: LocalDate, exitDate: LocalDate?, source: EntrySource) {
+        viewModelScope.launch {
+            val ok = repository.updateStay(id, entryDate, exitDate, source)
+            _uiState.update {
+                it.copy(validationMessage = if (ok) null else "Stay has invalid dates.")
+            }
+        }
+    }
+
+    fun updatePlannedTrip(id: Long, entryDate: LocalDate, exitDate: LocalDate, note: String) {
+        viewModelScope.launch {
+            val ok = repository.updatePlannedTrip(id, entryDate, exitDate, note)
+            _uiState.update {
+                it.copy(validationMessage = if (ok) null else "Planned trip has invalid dates.")
+            }
+        }
+    }
+
+    fun updateProfile(id: Long, name: String, passportNumber: String) {
+        if (name.isBlank()) {
+            _uiState.update { it.copy(validationMessage = "Profile name is required.") }
+            return
+        }
+        viewModelScope.launch {
+            val ok = repository.updateProfile(id, name, passportNumber)
+            _uiState.update {
+                it.copy(validationMessage = if (ok) null else "Profile could not be updated.")
+            }
+        }
+    }
+
+    fun deleteProfile(id: Long) {
+        viewModelScope.launch {
+            repository.deleteProfileById(id)
+            _uiState.update { it.copy(validationMessage = null) }
         }
     }
 
