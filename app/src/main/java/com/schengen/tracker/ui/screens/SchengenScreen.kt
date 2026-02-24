@@ -46,6 +46,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -446,15 +447,28 @@ private fun ProfileCard(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.Top
                         ) {
-                            Text(
-                                "${profile.name} ${
-                                    if (profile.passportNumber.isNotBlank()) "(${profile.passportNumber})" else ""
-                                }"
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(profile.name)
+                                if (profile.passportNumber.isNotBlank()) {
+                                    Text(
+                                        "Passport: ${profile.passportNumber}",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 TextButton(onClick = { onEditProfile(profile) }) { Text("Edit") }
                                 TextButton(onClick = { onSelect(profile.id) }) {
                                     Text(if (selected) "Active" else "Use")
