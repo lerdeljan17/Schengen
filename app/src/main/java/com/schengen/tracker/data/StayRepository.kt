@@ -27,6 +27,14 @@ class StayRepository(
 
     fun observeActiveProfileId() = activeProfileIdFlow.asStateFlow()
 
+    fun hasLocationTrackingPreference(): Boolean = prefs.contains(KEY_LOCATION_TRACKING_ENABLED)
+
+    fun isLocationTrackingEnabled(): Boolean = prefs.getBoolean(KEY_LOCATION_TRACKING_ENABLED, false)
+
+    fun setLocationTrackingEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_LOCATION_TRACKING_ENABLED, enabled).commit()
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     fun observeStaysForActiveProfile(): Flow<List<Stay>> {
         return activeProfileIdFlow
@@ -367,6 +375,7 @@ class StayRepository(
 
     companion object {
         private const val KEY_ACTIVE_PROFILE_ID = "active_profile_id"
+        private const val KEY_LOCATION_TRACKING_ENABLED = "location_tracking_enabled"
 
         private fun encodeRow(values: List<String>): String =
             values.joinToString(",") { value ->

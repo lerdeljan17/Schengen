@@ -32,6 +32,7 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             repository.ensureDefaultProfile()
             AlertScheduler.schedule(getApplication())
+            initializeLocationTrackingState()
         }
         observeData()
     }
@@ -214,11 +215,30 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setLocationTracking(enabled: Boolean) {
+        repository.setLocationTrackingEnabled(enabled)
         _uiState.update { it.copy(locationTrackingEnabled = enabled) }
         if (enabled) {
             LocationTrackingScheduler.schedule(getApplication())
         } else {
             LocationTrackingScheduler.cancel(getApplication())
+        }
+    }
+
+    private suspend fun initializeLocationTrackingState() {
+        val context = getApplication<Application>()
+        val prefEnabled = if (repository.hasLocationTrackingPreference()) {
+            repository.isLocationTrackingEnabled()
+        } else {
+            false
+        }
+        val scheduledEnabled = LocationTrackingScheduler.isScheduled(context)
+        val enabled = prefEnabled || scheduledEnabled
+        repository.setLocationTrackingEnabled(enabled)
+        _uiState.update { it.copy(locationTrackingEnabled = enabled) }
+        if (enabled) {
+            LocationTrackingScheduler.schedule(context)
+        } else {
+            LocationTrackingScheduler.cancel(context)
         }
     }
 
