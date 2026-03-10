@@ -78,6 +78,7 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
     var pendingPlannedEntry by remember { mutableStateOf<LocalDate?>(null) }
     var pendingPlannedExit by remember { mutableStateOf<LocalDate?>(null) }
     var plannedNote by remember { mutableStateOf("") }
+    var manualEntryNote by remember { mutableStateOf("") }
 
     var showAddProfileDialog by remember { mutableStateOf(false) }
     var newProfileName by remember { mutableStateOf("") }
@@ -94,10 +95,8 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { results ->
-        val fine = results[Manifest.permission.ACCESS_FINE_LOCATION] == true
-        val coarse = results[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        vm.setLocationTracking(fine || coarse)
+    ) {
+        vm.setLocationTracking(hasForegroundLocationPermission(context))
     }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -200,6 +199,12 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
                                         Button(onClick = { pickerMode = PickerMode.ENTRY }) { Text("Add entry") }
                                         Button(onClick = { pickerMode = PickerMode.EXIT }) { Text("Add exit") }
                                     }
+                                    OutlinedTextField(
+                                        value = manualEntryNote,
+                                        onValueChange = { manualEntryNote = it },
+                                        label = { Text("Note for next entry (optional)") },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
                                     state.validationMessage?.let {
                                         Text(text = it, color = MaterialTheme.colorScheme.error)
                                     }
@@ -211,7 +216,7 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
                                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text("Automatic detection", style = MaterialTheme.typography.titleMedium)
                                     Text(
-                                        "Background checks auto-add entry/exit records from your location.",
+                                        "Movement-triggered checks (geofence + location updates) auto-add entry/exit records from your location.",
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                     Row(
@@ -224,11 +229,23 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
                                             onCheckedChange = { enabled ->
                                                 if (enabled) {
                                                     if (hasForegroundLocationPermission(context)) {
-                                                        vm.setLocationTracking(true)
+                                                        if (
+                                                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                                                            !hasBackgroundLocationPermission(context)
+                                                        ) {
+                                                            permissionLauncher.launch(
+                                                                arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                                                            )
+                                                        } else {
+                                                            vm.setLocationTracking(true)
+                                                        }
                                                     } else {
                                                         val permissions = buildList {
                                                             add(Manifest.permission.ACCESS_FINE_LOCATION)
                                                             add(Manifest.permission.ACCESS_COARSE_LOCATION)
+                                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                                                add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                                                            }
                                                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                                                 add(Manifest.permission.POST_NOTIFICATIONS)
                                                             }
@@ -239,6 +256,23 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
                                                     vm.setLocationTracking(false)
                                                 }
                                             }
+                                        )
+                                    }
+                                    Button(
+                                        onClick = vm::runLocationCheckNow,
+                                        enabled = state.locationTrackingEnabled
+                                    ) {
+                                        Text("Check now")
+                                    }
+                                    state.locationStatusMessage?.let { message ->
+                                        Text(
+                                            text = message,
+                                            color = if (state.locationStatusIsError) {
+                                                MaterialTheme.colorScheme.error
+                                            } else {
+                                                MaterialTheme.colorScheme.primary
+                                            },
+                                            style = MaterialTheme.typography.bodySmall
                                         )
                                     }
                                 }
@@ -329,7 +363,10 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
                 TextButton(onClick = {
                     val picked = pickerState.selectedDateMillis?.toLocalDate() ?: LocalDate.now()
                     when (pickerMode) {
-                        PickerMode.ENTRY -> vm.addManualEntry(picked)
+                        PickerMode.ENTRY -> {
+                            vm.addManualEntry(picked, manualEntryNote)
+                            manualEntryNote = ""
+                        }
                         PickerMode.EXIT -> vm.addManualExit(picked)
                         PickerMode.PLANNED_ENTRY -> pendingPlannedEntry = picked
                         PickerMode.PLANNED_EXIT -> pendingPlannedExit = picked
@@ -382,8 +419,8 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
         EditStayDialog(
             stay = stay,
             onDismiss = { editingStay = null },
-            onSave = { entryDate, exitDate, source ->
-                vm.updateStay(stay.id, entryDate, exitDate, source)
+            onSave = { entryDate, exitDate, source, note ->
+                vm.updateStay(stay.id, entryDate, exitDate, source, note)
                 editingStay = null
             },
             onDelete = {
@@ -403,6 +440,10 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
             },
             onDelete = {
                 vm.deletePlannedTrip(trip.id)
+                editingPlannedTrip = null
+            },
+            onConfirm = {
+                vm.confirmPlannedTrip(trip.id)
                 editingPlannedTrip = null
             }
         )
@@ -604,6 +645,7 @@ private fun StayRow(stay: Stay, formatter: DateTimeFormatter, onClick: () -> Uni
             Text("Entry: ${stay.entryDate.format(formatter)}")
             Text("Exit: ${stay.exitDate?.format(formatter) ?: "Open"}")
             Text("Source: ${stay.source.name}")
+            if (stay.note.isNotBlank()) Text("Note: ${stay.note}")
             TextButton(onClick = onClick) { Text("Edit") }
         }
     }
@@ -629,13 +671,14 @@ private fun PlannedTripRow(trip: PlannedTrip, formatter: DateTimeFormatter, onCl
 private fun EditStayDialog(
     stay: Stay,
     onDismiss: () -> Unit,
-    onSave: (entryDate: LocalDate, exitDate: LocalDate?, source: EntrySource) -> Unit,
+    onSave: (entryDate: LocalDate, exitDate: LocalDate?, source: EntrySource, note: String) -> Unit,
     onDelete: () -> Unit
 ) {
     var entryDateText by remember(stay.id) { mutableStateOf(stay.entryDate.toString()) }
     var hasExitDate by remember(stay.id) { mutableStateOf(stay.exitDate != null) }
     var exitDateText by remember(stay.id) { mutableStateOf(stay.exitDate?.toString().orEmpty()) }
     var source by remember(stay.id) { mutableStateOf(stay.source) }
+    var noteText by remember(stay.id) { mutableStateOf(stay.note) }
     var errorMessage by remember(stay.id) { mutableStateOf<String?>(null) }
 
     AlertDialog(
@@ -660,7 +703,7 @@ private fun EditStayDialog(
                     parsedExit
                 }
                 errorMessage = null
-                onSave(entry, exit, source)
+                onSave(entry, exit, source, noteText)
             }) { Text("Save") }
         },
         dismissButton = {
@@ -707,6 +750,12 @@ private fun EditStayDialog(
                         enabled = source != EntrySource.AUTO
                     ) { Text("Auto") }
                 }
+                OutlinedTextField(
+                    value = noteText,
+                    onValueChange = { noteText = it },
+                    label = { Text("Note") },
+                    modifier = Modifier.fillMaxWidth()
+                )
                 TextButton(onClick = onDelete) { Text("Delete stay") }
                 errorMessage?.let { Text(text = it, color = MaterialTheme.colorScheme.error) }
             }
@@ -719,7 +768,8 @@ private fun EditPlannedTripDialog(
     trip: PlannedTrip,
     onDismiss: () -> Unit,
     onSave: (entryDate: LocalDate, exitDate: LocalDate, note: String) -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onConfirm: () -> Unit
 ) {
     var entryDateText by remember(trip.id) { mutableStateOf(trip.entryDate.toString()) }
     var exitDateText by remember(trip.id) { mutableStateOf(trip.exitDate.toString()) }
@@ -767,6 +817,7 @@ private fun EditPlannedTripDialog(
                     label = { Text("Note") },
                     modifier = Modifier.fillMaxWidth()
                 )
+                TextButton(onClick = onConfirm) { Text("Confirm as stay") }
                 TextButton(onClick = onDelete) { Text("Delete planned trip") }
                 errorMessage?.let { Text(text = it, color = MaterialTheme.colorScheme.error) }
             }
@@ -847,4 +898,12 @@ private fun hasForegroundLocationPermission(context: Context): Boolean {
         Manifest.permission.ACCESS_COARSE_LOCATION
     ) == PackageManager.PERMISSION_GRANTED
     return hasFine || hasCoarse
+}
+
+private fun hasBackgroundLocationPermission(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return true
+    return ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_BACKGROUND_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
 }

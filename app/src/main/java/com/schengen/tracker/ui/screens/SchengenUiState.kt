@@ -27,6 +27,8 @@ data class SchengenUiState(
     val plannedHighlightedDays: Set<LocalDate> = emptySet(),
     val firstPlannedOverstayDate: LocalDate? = null,
     val locationTrackingEnabled: Boolean = false,
+    val locationStatusMessage: String? = null,
+    val locationStatusIsError: Boolean = false,
     val validationMessage: String? = null,
     val importExportMessage: String? = null
 )

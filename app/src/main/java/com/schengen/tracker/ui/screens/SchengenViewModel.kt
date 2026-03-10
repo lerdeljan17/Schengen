@@ -12,6 +12,8 @@ import com.schengen.tracker.domain.PlannedTrip
 import com.schengen.tracker.domain.Profile
 import com.schengen.tracker.domain.SchengenCalculator
 import com.schengen.tracker.domain.Stay
+import com.schengen.tracker.location.AutoLocationCheckResult
+import com.schengen.tracker.location.LocationAutoTracker
 import com.schengen.tracker.location.LocationTrackingScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -117,9 +119,9 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun addManualEntry(date: LocalDate) {
+    fun addManualEntry(date: LocalDate, note: String) {
         viewModelScope.launch {
-            repository.addManualEntry(date)
+            repository.addManualEntry(date, note)
             _uiState.update { it.copy(validationMessage = null) }
         }
     }
@@ -154,9 +156,18 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun updateStay(id: Long, entryDate: LocalDate, exitDate: LocalDate?, source: EntrySource) {
+    fun confirmPlannedTrip(id: Long) {
         viewModelScope.launch {
-            val ok = repository.updateStay(id, entryDate, exitDate, source)
+            val ok = repository.confirmPlannedTripById(id)
+            _uiState.update {
+                it.copy(validationMessage = if (ok) null else "Planned trip could not be confirmed.")
+            }
+        }
+    }
+
+    fun updateStay(id: Long, entryDate: LocalDate, exitDate: LocalDate?, source: EntrySource, note: String) {
+        viewModelScope.launch {
+            val ok = repository.updateStay(id, entryDate, exitDate, source, note)
             _uiState.update {
                 it.copy(validationMessage = if (ok) null else "Stay has invalid dates.")
             }
@@ -216,11 +227,52 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
 
     fun setLocationTracking(enabled: Boolean) {
         repository.setLocationTrackingEnabled(enabled)
-        _uiState.update { it.copy(locationTrackingEnabled = enabled) }
+        _uiState.update {
+            it.copy(
+                locationTrackingEnabled = enabled,
+                locationStatusMessage = if (enabled) it.locationStatusMessage else null,
+                locationStatusIsError = if (enabled) it.locationStatusIsError else false
+            )
+        }
         if (enabled) {
             LocationTrackingScheduler.schedule(getApplication())
         } else {
             LocationTrackingScheduler.cancel(getApplication())
+        }
+    }
+
+    fun runLocationCheckNow() {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val tracker = LocationAutoTracker(app, repository)
+            val (message, isError) = when (val result = tracker.runCheck()) {
+                AutoLocationCheckResult.MissingPermission -> Pair(
+                    "Location permission missing. Enable location permission and try again.",
+                    true
+                )
+
+                AutoLocationCheckResult.LocationUnavailable -> Pair(
+                    "Could not get a fresh location. Set emulator location and press Check now again.",
+                    true
+                )
+
+                AutoLocationCheckResult.CountryUnavailable -> Pair(
+                    "Could not resolve country from current location.",
+                    true
+                )
+
+                is AutoLocationCheckResult.Updated -> {
+                    val region = if (result.inSchengen) "Schengen" else "non-Schengen"
+                    Pair("Location check complete: ${result.countryCode} ($region).", false)
+                }
+            }
+            _uiState.update {
+                it.copy(
+                    locationStatusMessage = message,
+                    locationStatusIsError = isError,
+                    validationMessage = null
+                )
+            }
         }
     }
 

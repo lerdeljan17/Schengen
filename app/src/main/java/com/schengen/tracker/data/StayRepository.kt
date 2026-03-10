@@ -74,13 +74,14 @@ class StayRepository(
         activeProfileIdFlow.value = id
     }
 
-    suspend fun addManualEntry(entryDate: LocalDate) {
+    suspend fun addManualEntry(entryDate: LocalDate, note: String) {
         val profileId = requireActiveProfileId() ?: return
         dao.insert(
             StayEntity(
                 profileId = profileId,
                 entryDate = entryDate.toString(),
-                source = EntrySource.MANUAL
+                source = EntrySource.MANUAL,
+                note = note.trim()
             )
         )
     }
@@ -133,7 +134,8 @@ class StayRepository(
         id: Long,
         entryDate: LocalDate,
         exitDate: LocalDate?,
-        source: EntrySource
+        source: EntrySource,
+        note: String
     ): Boolean {
         if (exitDate != null && exitDate.isBefore(entryDate)) return false
         val stay = dao.getStayById(id) ?: return false
@@ -141,7 +143,8 @@ class StayRepository(
             stay.copy(
                 entryDate = entryDate.toString(),
                 exitDate = exitDate?.toString(),
-                source = source
+                source = source,
+                note = note.trim()
             )
         )
         return true
@@ -184,6 +187,21 @@ class StayRepository(
 
     suspend fun deletePlannedTripById(id: Long) {
         dao.deletePlannedTripById(id)
+    }
+
+    suspend fun confirmPlannedTripById(id: Long): Boolean {
+        val trip = dao.getPlannedTripById(id) ?: return false
+        dao.insert(
+            StayEntity(
+                profileId = trip.profileId,
+                entryDate = trip.entryDate,
+                exitDate = trip.exitDate,
+                source = EntrySource.MANUAL,
+                note = trip.note.trim()
+            )
+        )
+        dao.deletePlannedTripById(id)
+        return true
     }
 
     suspend fun deleteProfileById(id: Long): Boolean {
@@ -229,7 +247,7 @@ class StayRepository(
                             stay.entryDate,
                             stay.exitDate ?: "",
                             stay.source.name,
-                            ""
+                            stay.note
                         )
                     )
                 )
@@ -300,7 +318,8 @@ class StayRepository(
                             profileId = resolvedProfileId,
                             entryDate = entry,
                             exitDate = exit,
-                            source = source
+                            source = source,
+                            note = fields.getOrElse(6) { "" }
                         )
                     )
                     importedRows += 1
@@ -359,7 +378,8 @@ class StayRepository(
             profileId = profileId,
             entryDate = LocalDate.parse(entryDate),
             exitDate = exitDate?.let(LocalDate::parse),
-            source = source
+            source = source,
+            note = note
         )
     }
 

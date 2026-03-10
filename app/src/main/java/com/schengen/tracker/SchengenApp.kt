@@ -14,6 +14,7 @@ class SchengenApp : Application() {
         super.onCreate()
         val db = Room.databaseBuilder(this, AppDatabase::class.java, "schengen.db")
             .addMigrations(AppDatabase.MIGRATION_1_2)
+            .addMigrations(AppDatabase.MIGRATION_2_3)
             .build()
         val prefs = getSharedPreferences("schengen_prefs", Context.MODE_PRIVATE)
         repository = StayRepository(db.stayDao(), prefs)

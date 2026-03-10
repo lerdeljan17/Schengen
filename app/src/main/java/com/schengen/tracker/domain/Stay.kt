@@ -8,5 +8,6 @@ data class Stay(
     val profileId: Long,
     val entryDate: LocalDate,
     val exitDate: LocalDate?,
-    val source: EntrySource
+    val source: EntrySource,
+    val note: String
 )

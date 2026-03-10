@@ -13,5 +13,6 @@ data class StayEntity(
     val profileId: Long,
     val entryDate: String,
     val exitDate: String? = null,
-    val source: EntrySource = EntrySource.MANUAL
+    val source: EntrySource = EntrySource.MANUAL,
+    val note: String = ""
 )
