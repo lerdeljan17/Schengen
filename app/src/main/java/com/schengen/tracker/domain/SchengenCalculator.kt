@@ -55,6 +55,28 @@ class SchengenCalculator {
         return null
     }
 
+    fun unlockedDaysInMonth(
+        month: YearMonth,
+        stays: List<Stay>,
+        plannedTrips: List<PlannedTrip> = emptyList()
+    ): Map<LocalDate, Int> {
+        val unlockedDays = linkedMapOf<LocalDate, Int>()
+        var cursor = month.atDay(1)
+        val end = month.atEndOfMonth()
+
+        while (!cursor.isAfter(end)) {
+            val previousDate = cursor.minusDays(1)
+            val unlockedCount = availableDaysOn(cursor, stays, plannedTrips) -
+                availableDaysOn(previousDate, stays, plannedTrips)
+            if (unlockedCount > 0) {
+                unlockedDays[cursor] = unlockedCount
+            }
+            cursor = cursor.plusDays(1)
+        }
+
+        return unlockedDays
+    }
+
     fun occupiedDaysInMonth(month: YearMonth, stays: List<Stay>): Set<LocalDate> {
         val start = month.atDay(1)
         val end = month.atEndOfMonth()

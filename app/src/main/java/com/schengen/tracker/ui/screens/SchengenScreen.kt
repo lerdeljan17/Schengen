@@ -64,7 +64,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-private enum class PickerMode { ENTRY, EXIT, PLANNED_ENTRY, PLANNED_EXIT }
+private enum class PickerMode { ENTRY, EXIT, PLANNED_ENTRY, PLANNED_EXIT, TARGET_DATE }
 private enum class AppTab(val title: String) { MAIN("Main"), HISTORY("History"), PLANNED("Planned"), TOOLS("Tools") }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -158,6 +158,15 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
                             )
                         }
                         item {
+                            TargetDateCard(
+                                targetDate = state.targetDate?.format(formatter),
+                                availableDaysOnTargetDate = state.availableDaysOnTargetDate,
+                                availableDaysOnTargetDateWithPlanned = state.availableDaysOnTargetDateWithPlanned,
+                                onPickDate = { pickerMode = PickerMode.TARGET_DATE },
+                                onClearDate = { vm.setTargetDate(null) }
+                            )
+                        }
+                        item {
                             Card {
                                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Row(
@@ -174,12 +183,31 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
                                     MonthCalendar(
                                         month = state.selectedMonth,
                                         occupiedDays = state.highlightedDays,
-                                        plannedDays = state.plannedHighlightedDays
+                                        plannedDays = state.plannedHighlightedDays,
+                                        unlockedDays = state.unlockedHighlightedDays
                                     )
                                     Text(
-                                        "Green = confirmed stay days, gold = planned trip days",
+                                        "Green = confirmed stay days, gold = planned trip days, blue = days that unlock more availability",
                                         style = MaterialTheme.typography.bodySmall
                                     )
+                                    val unlockPeriods = summarizeUnlockPeriods(state.unlockedDaysByDate)
+                                    val totalUnlockedDays = unlockPeriods.sumOf { it.unlockedDays }
+                                    if (unlockPeriods.isEmpty()) {
+                                        Text("No unlock days in this month.", style = MaterialTheme.typography.bodySmall)
+                                    } else {
+                                        Text(
+                                            "Total unlocked in this month: ${formatDayCount(totalUnlockedDays)}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text("Breakdown:", style = MaterialTheme.typography.bodySmall)
+                                        unlockPeriods.forEach { period ->
+                                            Text(
+                                                formatUnlockPeriod(period, formatter),
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -370,6 +398,7 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
                         PickerMode.EXIT -> vm.addManualExit(picked)
                         PickerMode.PLANNED_ENTRY -> pendingPlannedEntry = picked
                         PickerMode.PLANNED_EXIT -> pendingPlannedExit = picked
+                        PickerMode.TARGET_DATE -> vm.setTargetDate(picked)
                         null -> Unit
                     }
                     pickerMode = null
@@ -577,6 +606,35 @@ private fun MetricsCard(
                 else "Planned trips first exceed the limit on: $overstayDate",
                 color = if (overstayDate == null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
             )
+        }
+    }
+}
+
+@Composable
+private fun TargetDateCard(
+    targetDate: String?,
+    availableDaysOnTargetDate: Int?,
+    availableDaysOnTargetDateWithPlanned: Int?,
+    onPickDate: () -> Unit,
+    onClearDate: () -> Unit
+) {
+    Card {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Check days on specific date", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onPickDate) {
+                    Text(targetDate?.let { "Date: $it" } ?: "Pick date")
+                }
+                if (targetDate != null) {
+                    TextButton(onClick = onClearDate) { Text("Clear") }
+                }
+            }
+            if (targetDate != null && availableDaysOnTargetDate != null) {
+                Text("Confirmed stays only: $availableDaysOnTargetDate days available")
+                availableDaysOnTargetDateWithPlanned?.let { withPlanned ->
+                    Text("With planned trips: $withPlanned days available")
+                }
+            }
         }
     }
 }
@@ -879,6 +937,62 @@ private fun parseIsoDate(value: String): LocalDate? =
 
 private fun Long.toLocalDate(): LocalDate =
     Instant.ofEpochMilli(this).atZone(ZoneId.systemDefault()).toLocalDate()
+
+private data class UnlockPeriod(
+    val startDate: LocalDate,
+    val endDate: LocalDate,
+    val unlockedDays: Int
+)
+
+private fun summarizeUnlockPeriods(unlockedDaysByDate: Map<LocalDate, Int>): List<UnlockPeriod> {
+    if (unlockedDaysByDate.isEmpty()) return emptyList()
+    val sortedEntries = unlockedDaysByDate.entries.sortedBy { it.key }
+
+    val periods = mutableListOf<UnlockPeriod>()
+    var periodStart = sortedEntries.first().key
+    var periodEnd = periodStart
+    var periodUnlockedDays = sortedEntries.first().value
+
+    for ((date, unlockedDays) in sortedEntries.drop(1)) {
+        if (date == periodEnd.plusDays(1)) {
+            periodEnd = date
+            periodUnlockedDays += unlockedDays
+        } else {
+            periods.add(
+                UnlockPeriod(
+                    startDate = periodStart,
+                    endDate = periodEnd,
+                    unlockedDays = periodUnlockedDays
+                )
+            )
+            periodStart = date
+            periodEnd = date
+            periodUnlockedDays = unlockedDays
+        }
+    }
+
+    periods.add(
+        UnlockPeriod(
+            startDate = periodStart,
+            endDate = periodEnd,
+            unlockedDays = periodUnlockedDays
+        )
+    )
+    return periods
+}
+
+private fun formatUnlockPeriod(period: UnlockPeriod, formatter: DateTimeFormatter): String {
+    val dateLabel = if (period.startDate == period.endDate) {
+        period.startDate.format(formatter)
+    } else {
+        "${period.startDate.format(formatter)} - ${period.endDate.format(formatter)}"
+    }
+    return "$dateLabel: ${formatDayCount(period.unlockedDays)}"
+}
+
+private fun formatDayCount(value: Int): String {
+    return if (value == 1) "1 day" else "$value days"
+}
 
 private fun formatDelta(value: Int): String {
     return when {

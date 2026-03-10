@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.schengen.tracker.ui.theme.UnlockBlue
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
@@ -32,6 +33,7 @@ fun MonthCalendar(
     month: YearMonth,
     occupiedDays: Set<LocalDate>,
     plannedDays: Set<LocalDate> = emptySet(),
+    unlockedDays: Set<LocalDate> = emptySet(),
     modifier: Modifier = Modifier
 ) {
     val weekDays = listOf(
@@ -69,6 +71,7 @@ fun MonthCalendar(
                 } else {
                     val occupied = date in occupiedDays
                     val planned = date in plannedDays
+                    val unlocked = date in unlockedDays
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
@@ -77,6 +80,7 @@ fun MonthCalendar(
                             .clip(MaterialTheme.shapes.small)
                             .background(
                                 when {
+                                    unlocked -> UnlockBlue.copy(alpha = 0.55f)
                                     occupied -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.65f)
                                     planned -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)
                                     else -> MaterialTheme.colorScheme.surface
@@ -91,7 +95,7 @@ fun MonthCalendar(
                         Text(
                             text = date.dayOfMonth.toString(),
                             style = MaterialTheme.typography.labelMedium,
-                            fontWeight = if (occupied || planned) FontWeight.SemiBold else FontWeight.Normal
+                            fontWeight = if (occupied || planned || unlocked) FontWeight.SemiBold else FontWeight.Normal
                         )
                     }
                 }

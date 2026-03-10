@@ -50,7 +50,9 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
                 CombinedState(profiles, activeId, stays, plannedTrips)
             }.collect { result ->
                 val today = LocalDate.now()
-                val month = _uiState.value.selectedMonth
+                val currentState = _uiState.value
+                val month = currentState.selectedMonth
+                val targetDate = currentState.targetDate
                 val hasPlannedTrips = result.plannedTrips.isNotEmpty()
                 val simulatedAsOfDate = result.plannedTrips.maxOfOrNull { it.exitDate }?.let { maxOf(today, it) }
                 val projectedUsedDaysToday = if (hasPlannedTrips) {
@@ -69,6 +71,17 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
                 val simulatedDeltaDaysAtPlanEnd = simulatedAsOfDate?.let {
                     calculator.availableDaysOn(it, result.stays, result.plannedTrips) -
                         calculator.availableDaysOn(it, result.stays)
+                }
+                val unlockedDaysByDate = calculator.unlockedDaysInMonth(month, result.stays, result.plannedTrips)
+                val availableDaysOnTargetDate = targetDate?.let {
+                    calculator.availableDaysOn(it, result.stays)
+                }
+                val availableDaysOnTargetDateWithPlanned = if (hasPlannedTrips) {
+                    targetDate?.let {
+                        calculator.availableDaysOn(it, result.stays, result.plannedTrips)
+                    }
+                } else {
+                    null
                 }
                 _uiState.update {
                     it.copy(
@@ -89,11 +102,15 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
                         nextRecoveryDate = calculator.nextDateWithMoreAvailability(today, result.stays),
                         highlightedDays = calculator.occupiedDaysInMonth(month, result.stays),
                         plannedHighlightedDays = calculator.plannedDaysInMonth(month, result.plannedTrips),
+                        unlockedHighlightedDays = unlockedDaysByDate.keys,
+                        unlockedDaysByDate = unlockedDaysByDate,
                         firstPlannedOverstayDate = calculator.firstPlannedOverstayDate(
                             today,
                             result.stays,
                             result.plannedTrips
-                        )
+                        ),
+                        availableDaysOnTargetDate = availableDaysOnTargetDate,
+                        availableDaysOnTargetDateWithPlanned = availableDaysOnTargetDateWithPlanned
                     )
                 }
             }
@@ -206,10 +223,13 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
     fun previousMonth() {
         val month = _uiState.value.selectedMonth.minusMonths(1)
         _uiState.update {
+            val unlockedDaysByDate = calculator.unlockedDaysInMonth(month, it.stays, it.plannedTrips)
             it.copy(
                 selectedMonth = month,
                 highlightedDays = calculator.occupiedDaysInMonth(month, it.stays),
-                plannedHighlightedDays = calculator.plannedDaysInMonth(month, it.plannedTrips)
+                plannedHighlightedDays = calculator.plannedDaysInMonth(month, it.plannedTrips),
+                unlockedHighlightedDays = unlockedDaysByDate.keys,
+                unlockedDaysByDate = unlockedDaysByDate
             )
         }
     }
@@ -217,10 +237,31 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
     fun nextMonth() {
         val month = _uiState.value.selectedMonth.plusMonths(1)
         _uiState.update {
+            val unlockedDaysByDate = calculator.unlockedDaysInMonth(month, it.stays, it.plannedTrips)
             it.copy(
                 selectedMonth = month,
                 highlightedDays = calculator.occupiedDaysInMonth(month, it.stays),
-                plannedHighlightedDays = calculator.plannedDaysInMonth(month, it.plannedTrips)
+                plannedHighlightedDays = calculator.plannedDaysInMonth(month, it.plannedTrips),
+                unlockedHighlightedDays = unlockedDaysByDate.keys,
+                unlockedDaysByDate = unlockedDaysByDate
+            )
+        }
+    }
+
+    fun setTargetDate(date: LocalDate?) {
+        _uiState.update {
+            it.copy(
+                targetDate = date,
+                availableDaysOnTargetDate = date?.let { selected ->
+                    calculator.availableDaysOn(selected, it.stays)
+                },
+                availableDaysOnTargetDateWithPlanned = if (it.plannedTrips.isNotEmpty()) {
+                    date?.let { selected ->
+                        calculator.availableDaysOn(selected, it.stays, it.plannedTrips)
+                    }
+                } else {
+                    null
+                }
             )
         }
     }
