@@ -2,6 +2,8 @@
 
 Android app for tracking Schengen short-stay limits under the 90/180 rule.
 
+Latest release: https://github.com/lerdeljan17/Schengen/releases/latest
+
 ## Implemented features
 
 - Manual stay management
@@ -31,7 +33,10 @@ Android app for tracking Schengen short-stay limits under the 90/180 rule.
   - Local notifications when available days hit thresholds (30, 15, 7, 1)
   - Includes planned-trip warning context if simulations exceed limits
 - Automatic tracking scaffold
-  - Optional background location checks (WorkManager)
+  - Dynamic movement geofence around the latest known location
+  - Immediate check when exiting that area or when background location updates arrive
+  - Periodic fallback checks (WorkManager)
+  - Manual "Check now" button for instant validation/testing
   - Reverse geocoding to detect country
   - Auto entry/exit when Schengen in/out state changes
 
@@ -62,6 +67,7 @@ Reference pages used while implementing:
 
 ## Permissions requested
 
+- `INTERNET`
 - `ACCESS_FINE_LOCATION`
 - `ACCESS_COARSE_LOCATION`
 - `ACCESS_BACKGROUND_LOCATION`
@@ -70,5 +76,5 @@ Reference pages used while implementing:
 ## Current limitations
 
 - Local-only storage by design (no cloud sync/backups).
-- Automatic detection uses periodic checks (every 6 hours), not geofence edge events.
+- Geofence tracking uses a movement anchor radius (5 km), so trigger timing depends on device/location provider behavior.
 - If a stay remains open, forecasts assume you continue staying in Schengen.
