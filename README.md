@@ -2,6 +2,8 @@
 
 Android app for tracking Schengen short-stay limits under the 90/180 rule.
 
+link to latest release releases/latest
+
 ## Implemented features
 
 - Manual stay management
