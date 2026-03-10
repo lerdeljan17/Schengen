@@ -171,20 +171,28 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
                                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                        horizontalArrangement = Arrangement.Center
                                     ) {
-                                        TextButton(onClick = vm::previousMonth) { Text("Prev") }
                                         Text(
                                             state.selectedMonth.month.name.lowercase().replaceFirstChar { it.uppercase() } + " ${state.selectedMonth.year}",
                                             style = MaterialTheme.typography.titleMedium
                                         )
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceEvenly,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        TextButton(onClick = vm::previousMonth) { Text("Prev") }
+                                        TextButton(onClick = vm::goToCurrentMonth) { Text("Today") }
                                         TextButton(onClick = vm::nextMonth) { Text("Next") }
                                     }
                                     MonthCalendar(
                                         month = state.selectedMonth,
                                         occupiedDays = state.highlightedDays,
                                         plannedDays = state.plannedHighlightedDays,
-                                        unlockedDays = state.unlockedHighlightedDays
+                                        unlockedDays = state.unlockedHighlightedDays,
+                                        todayDate = state.today
                                     )
                                     Text(
                                         "Green = confirmed stay days, gold = planned trip days, blue = days that unlock more availability",

@@ -34,6 +34,7 @@ fun MonthCalendar(
     occupiedDays: Set<LocalDate>,
     plannedDays: Set<LocalDate> = emptySet(),
     unlockedDays: Set<LocalDate> = emptySet(),
+    todayDate: LocalDate = LocalDate.now(),
     modifier: Modifier = Modifier
 ) {
     val weekDays = listOf(
@@ -72,6 +73,7 @@ fun MonthCalendar(
                     val occupied = date in occupiedDays
                     val planned = date in plannedDays
                     val unlocked = date in unlockedDays
+                    val isToday = date == todayDate
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
@@ -87,8 +89,8 @@ fun MonthCalendar(
                                 }
                             )
                             .border(
-                                width = 1.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant,
+                                width = if (isToday) 2.dp else 1.dp,
+                                color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
                                 shape = MaterialTheme.shapes.small
                             )
                     ) {

@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.YearMonth
 
 class SchengenViewModel(application: Application) : AndroidViewModel(application) {
     private val repository: StayRepository = (application as SchengenApp).repository
@@ -236,6 +237,20 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
 
     fun nextMonth() {
         val month = _uiState.value.selectedMonth.plusMonths(1)
+        _uiState.update {
+            val unlockedDaysByDate = calculator.unlockedDaysInMonth(month, it.stays, it.plannedTrips)
+            it.copy(
+                selectedMonth = month,
+                highlightedDays = calculator.occupiedDaysInMonth(month, it.stays),
+                plannedHighlightedDays = calculator.plannedDaysInMonth(month, it.plannedTrips),
+                unlockedHighlightedDays = unlockedDaysByDate.keys,
+                unlockedDaysByDate = unlockedDaysByDate
+            )
+        }
+    }
+
+    fun goToCurrentMonth() {
+        val month = YearMonth.now()
         _uiState.update {
             val unlockedDaysByDate = calculator.unlockedDaysInMonth(month, it.stays, it.plannedTrips)
             it.copy(
