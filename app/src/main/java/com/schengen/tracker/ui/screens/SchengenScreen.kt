@@ -63,6 +63,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 
 private enum class PickerMode { ENTRY, EXIT, PLANNED_ENTRY, PLANNED_EXIT, TARGET_DATE }
 private enum class AppTab(val title: String) { MAIN("Main"), HISTORY("History"), PLANNED("Planned"), TOOLS("Tools") }
@@ -710,6 +711,7 @@ private fun StayRow(stay: Stay, formatter: DateTimeFormatter, onClick: () -> Uni
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Entry: ${stay.entryDate.format(formatter)}")
             Text("Exit: ${stay.exitDate?.format(formatter) ?: "Open"}")
+            Text(stayDurationSummary(stay), fontWeight = FontWeight.SemiBold)
             Text("Source: ${stay.source.name}")
             if (stay.note.isNotBlank()) Text("Note: ${stay.note}")
             TextButton(onClick = onClick) { Text("Edit") }
@@ -727,6 +729,9 @@ private fun PlannedTripRow(trip: PlannedTrip, formatter: DateTimeFormatter, onCl
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Entry: ${trip.entryDate.format(formatter)}")
             Text("Exit: ${trip.exitDate.format(formatter)}")
+            plannedTripDurationSummary(trip.entryDate, trip.exitDate)?.let {
+                Text(it, fontWeight = FontWeight.SemiBold)
+            }
             if (trip.note.isNotBlank()) Text("Note: ${trip.note}")
             TextButton(onClick = onClick) { Text("Edit") }
         }
@@ -746,6 +751,11 @@ private fun EditStayDialog(
     var source by remember(stay.id) { mutableStateOf(stay.source) }
     var noteText by remember(stay.id) { mutableStateOf(stay.note) }
     var errorMessage by remember(stay.id) { mutableStateOf<String?>(null) }
+    val durationText = stayDurationSummary(
+        entry = parseIsoDate(entryDateText),
+        exit = if (hasExitDate) parseIsoDate(exitDateText) else null,
+        hasExitDate = hasExitDate
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -805,6 +815,9 @@ private fun EditStayDialog(
                         singleLine = true
                     )
                 }
+                durationText?.let {
+                    Text(it, fontWeight = FontWeight.SemiBold)
+                }
                 Text("Source", fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
@@ -841,6 +854,10 @@ private fun EditPlannedTripDialog(
     var exitDateText by remember(trip.id) { mutableStateOf(trip.exitDate.toString()) }
     var noteText by remember(trip.id) { mutableStateOf(trip.note) }
     var errorMessage by remember(trip.id) { mutableStateOf<String?>(null) }
+    val durationText = plannedTripDurationSummary(
+        entry = parseIsoDate(entryDateText),
+        exit = parseIsoDate(exitDateText)
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -877,6 +894,9 @@ private fun EditPlannedTripDialog(
                     label = { Text("Exit date (YYYY-MM-DD)") },
                     singleLine = true
                 )
+                durationText?.let {
+                    Text(it, fontWeight = FontWeight.SemiBold)
+                }
                 OutlinedTextField(
                     value = noteText,
                     onValueChange = { noteText = it },
@@ -996,6 +1016,31 @@ private fun formatUnlockPeriod(period: UnlockPeriod, formatter: DateTimeFormatte
         "${period.startDate.format(formatter)} - ${period.endDate.format(formatter)}"
     }
     return "$dateLabel: ${formatDayCount(period.unlockedDays)}"
+}
+
+private fun stayDurationSummary(stay: Stay): String {
+    return stayDurationSummary(
+        entry = stay.entryDate,
+        exit = stay.exitDate,
+        hasExitDate = stay.exitDate != null
+    ).orEmpty()
+}
+
+private fun stayDurationSummary(entry: LocalDate?, exit: LocalDate?, hasExitDate: Boolean): String? {
+    if (entry == null) return null
+    val effectiveExit = if (hasExitDate) exit ?: return null else LocalDate.now()
+    if (effectiveExit.isBefore(entry)) return null
+    val label = if (hasExitDate) "Duration" else "Days so far"
+    return "$label: ${formatDayCount(inclusiveDayCount(entry, effectiveExit))}"
+}
+
+private fun plannedTripDurationSummary(entry: LocalDate?, exit: LocalDate?): String? {
+    if (entry == null || exit == null || exit.isBefore(entry)) return null
+    return "Duration: ${formatDayCount(inclusiveDayCount(entry, exit))}"
+}
+
+private fun inclusiveDayCount(start: LocalDate, end: LocalDate): Int {
+    return ChronoUnit.DAYS.between(start, end).toInt() + 1
 }
 
 private fun formatDayCount(value: Int): String {
