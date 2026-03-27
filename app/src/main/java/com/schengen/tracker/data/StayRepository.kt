@@ -1,9 +1,11 @@
 package com.schengen.tracker.data
 
 import android.content.SharedPreferences
+import com.schengen.tracker.data.AppTypeConverters.Companion.decodeCountryCodes
 import com.schengen.tracker.domain.PlannedTrip
 import com.schengen.tracker.domain.Profile
 import com.schengen.tracker.domain.Stay
+import com.schengen.tracker.location.SchengenCountryCatalog
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -74,14 +76,15 @@ class StayRepository(
         activeProfileIdFlow.value = id
     }
 
-    suspend fun addManualEntry(entryDate: LocalDate, note: String) {
+    suspend fun addManualEntry(entryDate: LocalDate, note: String, countries: List<String>) {
         val profileId = requireActiveProfileId() ?: return
         dao.insert(
             StayEntity(
                 profileId = profileId,
                 entryDate = entryDate.toString(),
                 source = EntrySource.MANUAL,
-                note = note.trim()
+                note = note.trim(),
+                countries = normalizeCountryCodes(countries)
             )
         )
     }
@@ -94,7 +97,12 @@ class StayRepository(
         return true
     }
 
-    suspend fun addPlannedTrip(entryDate: LocalDate, exitDate: LocalDate, note: String): Boolean {
+    suspend fun addPlannedTrip(
+        entryDate: LocalDate,
+        exitDate: LocalDate,
+        note: String,
+        countries: List<String>
+    ): Boolean {
         if (exitDate.isBefore(entryDate)) return false
         val profileId = requireActiveProfileId() ?: return false
         dao.insertPlannedTrip(
@@ -102,23 +110,34 @@ class StayRepository(
                 profileId = profileId,
                 entryDate = entryDate.toString(),
                 exitDate = exitDate.toString(),
-                note = note.trim()
+                note = note.trim(),
+                countries = normalizeCountryCodes(countries)
             )
         )
         return true
     }
 
-    suspend fun addAutoState(inSchengen: Boolean, date: LocalDate) {
+    suspend fun addAutoState(inSchengen: Boolean, date: LocalDate, countryCode: String? = null) {
         val profileId = requireActiveProfileId() ?: return
         val open = dao.getLatestOpenStay(profileId)
+        val normalizedCountryCode = countryCode?.let(SchengenCountryCatalog::normalizeCode)
         if (inSchengen && open == null) {
             dao.insert(
                 StayEntity(
                     profileId = profileId,
                     entryDate = date.toString(),
-                    source = EntrySource.AUTO
+                    source = EntrySource.AUTO,
+                    countries = listOfNotNull(normalizedCountryCode)
                 )
             )
+            return
+        }
+
+        if (inSchengen && open != null) {
+            val updatedCountries = normalizeCountryCodes(open.countries + listOfNotNull(normalizedCountryCode))
+            if (updatedCountries != open.countries) {
+                dao.updateStay(open.copy(countries = updatedCountries))
+            }
             return
         }
 
@@ -135,7 +154,8 @@ class StayRepository(
         entryDate: LocalDate,
         exitDate: LocalDate?,
         source: EntrySource,
-        note: String
+        note: String,
+        countries: List<String>
     ): Boolean {
         if (exitDate != null && exitDate.isBefore(entryDate)) return false
         val stay = dao.getStayById(id) ?: return false
@@ -144,7 +164,8 @@ class StayRepository(
                 entryDate = entryDate.toString(),
                 exitDate = exitDate?.toString(),
                 source = source,
-                note = note.trim()
+                note = note.trim(),
+                countries = normalizeCountryCodes(countries)
             )
         )
         return true
@@ -154,7 +175,8 @@ class StayRepository(
         id: Long,
         entryDate: LocalDate,
         exitDate: LocalDate,
-        note: String
+        note: String,
+        countries: List<String>
     ): Boolean {
         if (exitDate.isBefore(entryDate)) return false
         val trip = dao.getPlannedTripById(id) ?: return false
@@ -162,7 +184,8 @@ class StayRepository(
             trip.copy(
                 entryDate = entryDate.toString(),
                 exitDate = exitDate.toString(),
-                note = note.trim()
+                note = note.trim(),
+                countries = normalizeCountryCodes(countries)
             )
         )
         return true
@@ -189,15 +212,25 @@ class StayRepository(
         dao.deletePlannedTripById(id)
     }
 
-    suspend fun confirmPlannedTripById(id: Long): Boolean {
+    suspend fun confirmPlannedTripById(
+        id: Long,
+        entryDate: LocalDate? = null,
+        exitDate: LocalDate? = null,
+        note: String? = null,
+        countries: List<String>? = null
+    ): Boolean {
         val trip = dao.getPlannedTripById(id) ?: return false
+        val resolvedEntryDate = entryDate ?: LocalDate.parse(trip.entryDate)
+        val resolvedExitDate = exitDate ?: LocalDate.parse(trip.exitDate)
+        if (resolvedExitDate.isBefore(resolvedEntryDate)) return false
         dao.insert(
             StayEntity(
                 profileId = trip.profileId,
-                entryDate = trip.entryDate,
-                exitDate = trip.exitDate,
+                entryDate = resolvedEntryDate.toString(),
+                exitDate = resolvedExitDate.toString(),
                 source = EntrySource.MANUAL,
-                note = trip.note.trim()
+                note = (note ?: trip.note).trim(),
+                countries = normalizeCountryCodes(countries ?: trip.countries)
             )
         )
         dao.deletePlannedTripById(id)
@@ -220,7 +253,7 @@ class StayRepository(
 
     suspend fun exportCsv(writer: BufferedWriter) {
         val profiles = dao.getAllProfiles()
-        writer.appendLine("type,profile_name,passport_number,entry_date,exit_date,source,note")
+        writer.appendLine("type,profile_name,passport_number,entry_date,exit_date,source,note,countries")
 
         for (profile in profiles) {
             writer.appendLine(
@@ -229,6 +262,7 @@ class StayRepository(
                         "PROFILE",
                         profile.name,
                         profile.passportNumber,
+                        "",
                         "",
                         "",
                         "",
@@ -247,7 +281,8 @@ class StayRepository(
                             stay.entryDate,
                             stay.exitDate ?: "",
                             stay.source.name,
-                            stay.note
+                            stay.note,
+                            formatCountriesForCsv(stay.countries)
                         )
                     )
                 )
@@ -263,7 +298,8 @@ class StayRepository(
                             trip.entryDate,
                             trip.exitDate,
                             "",
-                            trip.note
+                            trip.note,
+                            formatCountriesForCsv(trip.countries)
                         )
                     )
                 )
@@ -319,7 +355,8 @@ class StayRepository(
                             entryDate = entry,
                             exitDate = exit,
                             source = source,
-                            note = fields.getOrElse(6) { "" }
+                            note = fields.getOrElse(6) { "" },
+                            countries = parseImportedCountries(fields.getOrElse(7) { "" })
                         )
                     )
                     importedRows += 1
@@ -334,7 +371,8 @@ class StayRepository(
                             profileId = resolvedProfileId,
                             entryDate = entry,
                             exitDate = exit,
-                            note = fields.getOrElse(6) { "" }
+                            note = fields.getOrElse(6) { "" },
+                            countries = parseImportedCountries(fields.getOrElse(7) { "" })
                         )
                     )
                     importedRows += 1
@@ -379,7 +417,8 @@ class StayRepository(
             entryDate = LocalDate.parse(entryDate),
             exitDate = exitDate?.let(LocalDate::parse),
             source = source,
-            note = note
+            note = note,
+            countries = normalizeCountryCodes(countries)
         )
     }
 
@@ -389,7 +428,8 @@ class StayRepository(
             profileId = profileId,
             entryDate = LocalDate.parse(entryDate),
             exitDate = LocalDate.parse(exitDate),
-            note = note
+            note = note,
+            countries = normalizeCountryCodes(countries)
         )
     }
 
@@ -402,6 +442,15 @@ class StayRepository(
                 val escaped = value.replace("\"", "\"\"")
                 "\"$escaped\""
             }
+
+        private fun normalizeCountryCodes(values: List<String>): List<String> =
+            SchengenCountryCatalog.normalizeCodes(values)
+
+        private fun parseImportedCountries(value: String): List<String> =
+            normalizeCountryCodes(decodeCountryCodes(value))
+
+        private fun formatCountriesForCsv(countryCodes: List<String>): String =
+            SchengenCountryCatalog.displayNames(countryCodes).joinToString()
 
         private fun parseCsvLine(line: String): List<String> {
             val out = mutableListOf<String>()

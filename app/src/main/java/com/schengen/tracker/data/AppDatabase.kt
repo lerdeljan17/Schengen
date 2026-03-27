@@ -3,13 +3,15 @@ package com.schengen.tracker.data
 import androidx.room.Database
 import androidx.room.migration.Migration
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [StayEntity::class, ProfileEntity::class, PlannedTripEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
+@TypeConverters(AppTypeConverters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun stayDao(): StayDao
 
@@ -48,6 +50,12 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `stays` ADD COLUMN `note` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `stays` ADD COLUMN `countries` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `planned_trips` ADD COLUMN `countries` TEXT NOT NULL DEFAULT ''")
             }
         }
     }

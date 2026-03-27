@@ -14,6 +14,7 @@ import com.schengen.tracker.domain.SchengenCalculator
 import com.schengen.tracker.domain.Stay
 import com.schengen.tracker.location.AutoLocationCheckResult
 import com.schengen.tracker.location.LocationAutoTracker
+import com.schengen.tracker.location.SchengenCountryCatalog
 import com.schengen.tracker.location.LocationTrackingScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -137,9 +138,9 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun addManualEntry(date: LocalDate, note: String) {
+    fun addManualEntry(date: LocalDate, note: String, countries: List<String>) {
         viewModelScope.launch {
-            repository.addManualEntry(date, note)
+            repository.addManualEntry(date, note, countries)
             _uiState.update { it.copy(validationMessage = null) }
         }
     }
@@ -153,9 +154,9 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun addPlannedTrip(entry: LocalDate, exit: LocalDate, note: String) {
+    fun addPlannedTrip(entry: LocalDate, exit: LocalDate, note: String, countries: List<String>) {
         viewModelScope.launch {
-            val ok = repository.addPlannedTrip(entry, exit, note)
+            val ok = repository.addPlannedTrip(entry, exit, note, countries)
             _uiState.update {
                 it.copy(validationMessage = if (ok) null else "Planned trip has invalid dates.")
             }
@@ -174,27 +175,46 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun confirmPlannedTrip(id: Long) {
+    fun confirmPlannedTrip(
+        id: Long,
+        entryDate: LocalDate? = null,
+        exitDate: LocalDate? = null,
+        note: String? = null,
+        countries: List<String>? = null
+    ) {
         viewModelScope.launch {
-            val ok = repository.confirmPlannedTripById(id)
+            val ok = repository.confirmPlannedTripById(id, entryDate, exitDate, note, countries)
             _uiState.update {
                 it.copy(validationMessage = if (ok) null else "Planned trip could not be confirmed.")
             }
         }
     }
 
-    fun updateStay(id: Long, entryDate: LocalDate, exitDate: LocalDate?, source: EntrySource, note: String) {
+    fun updateStay(
+        id: Long,
+        entryDate: LocalDate,
+        exitDate: LocalDate?,
+        source: EntrySource,
+        note: String,
+        countries: List<String>
+    ) {
         viewModelScope.launch {
-            val ok = repository.updateStay(id, entryDate, exitDate, source, note)
+            val ok = repository.updateStay(id, entryDate, exitDate, source, note, countries)
             _uiState.update {
                 it.copy(validationMessage = if (ok) null else "Stay has invalid dates.")
             }
         }
     }
 
-    fun updatePlannedTrip(id: Long, entryDate: LocalDate, exitDate: LocalDate, note: String) {
+    fun updatePlannedTrip(
+        id: Long,
+        entryDate: LocalDate,
+        exitDate: LocalDate,
+        note: String,
+        countries: List<String>
+    ) {
         viewModelScope.launch {
-            val ok = repository.updatePlannedTrip(id, entryDate, exitDate, note)
+            val ok = repository.updatePlannedTrip(id, entryDate, exitDate, note, countries)
             _uiState.update {
                 it.copy(validationMessage = if (ok) null else "Planned trip has invalid dates.")
             }
@@ -318,8 +338,9 @@ class SchengenViewModel(application: Application) : AndroidViewModel(application
                 )
 
                 is AutoLocationCheckResult.Updated -> {
+                    val countryName = SchengenCountryCatalog.nameForCode(result.countryCode)
                     val region = if (result.inSchengen) "Schengen" else "non-Schengen"
-                    Pair("Location check complete: ${result.countryCode} ($region).", false)
+                    Pair("Location check complete: $countryName (${result.countryCode}, $region).", false)
                 }
             }
             _uiState.update {

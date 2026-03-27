@@ -14,5 +14,6 @@ data class StayEntity(
     val entryDate: String,
     val exitDate: String? = null,
     val source: EntrySource = EntrySource.MANUAL,
-    val note: String = ""
+    val note: String = "",
+    val countries: List<String> = emptyList()
 )

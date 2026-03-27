@@ -13,5 +13,6 @@ data class PlannedTripEntity(
     val profileId: Long,
     val entryDate: String,
     val exitDate: String,
-    val note: String = ""
+    val note: String = "",
+    val countries: List<String> = emptyList()
 )

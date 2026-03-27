@@ -7,5 +7,6 @@ data class PlannedTrip(
     val profileId: Long,
     val entryDate: LocalDate,
     val exitDate: LocalDate,
-    val note: String
+    val note: String,
+    val countries: List<String>
 )

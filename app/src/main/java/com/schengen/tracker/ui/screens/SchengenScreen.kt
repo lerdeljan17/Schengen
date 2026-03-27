@@ -14,10 +14,12 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -27,6 +29,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -57,6 +60,7 @@ import com.schengen.tracker.data.EntrySource
 import com.schengen.tracker.domain.PlannedTrip
 import com.schengen.tracker.domain.Profile
 import com.schengen.tracker.domain.Stay
+import com.schengen.tracker.location.SchengenCountryCatalog
 import com.schengen.tracker.ui.components.MonthCalendar
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -67,6 +71,7 @@ import java.time.temporal.ChronoUnit
 
 private enum class PickerMode { ENTRY, EXIT, PLANNED_ENTRY, PLANNED_EXIT, TARGET_DATE }
 private enum class AppTab(val title: String) { MAIN("Main"), HISTORY("History"), PLANNED("Planned"), TOOLS("Tools") }
+private enum class CountryPickerTarget { MANUAL_ENTRY, PLANNED_TRIP }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -79,7 +84,10 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
     var pendingPlannedEntry by remember { mutableStateOf<LocalDate?>(null) }
     var pendingPlannedExit by remember { mutableStateOf<LocalDate?>(null) }
     var plannedNote by remember { mutableStateOf("") }
+    var plannedCountries by remember { mutableStateOf<List<String>>(emptyList()) }
     var manualEntryNote by remember { mutableStateOf("") }
+    var manualEntryCountries by remember { mutableStateOf<List<String>>(emptyList()) }
+    var countryPickerTarget by remember { mutableStateOf<CountryPickerTarget?>(null) }
 
     var showAddProfileDialog by remember { mutableStateOf(false) }
     var newProfileName by remember { mutableStateOf("") }
@@ -242,6 +250,10 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
                                         label = { Text("Note for next entry (optional)") },
                                         modifier = Modifier.fillMaxWidth()
                                     )
+                                    CountrySelectionSummary(
+                                        selectedCountryCodes = manualEntryCountries,
+                                        onPickCountries = { countryPickerTarget = CountryPickerTarget.MANUAL_ENTRY }
+                                    )
                                     state.validationMessage?.let {
                                         Text(text = it, color = MaterialTheme.colorScheme.error)
                                     }
@@ -339,14 +351,22 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
                                 onPickEntry = { pickerMode = PickerMode.PLANNED_ENTRY },
                                 onPickExit = { pickerMode = PickerMode.PLANNED_EXIT },
                                 onNoteChange = { plannedNote = it },
+                                countries = plannedCountries,
+                                onPickCountries = { countryPickerTarget = CountryPickerTarget.PLANNED_TRIP },
                                 onAdd = {
                                     val entry = pendingPlannedEntry
                                     val exit = pendingPlannedExit
                                     if (entry != null && exit != null) {
-                                        vm.addPlannedTrip(entry, exit, plannedNote)
+                                        vm.addPlannedTrip(
+                                            entry,
+                                            exit,
+                                            plannedNote,
+                                            plannedCountries
+                                        )
                                         pendingPlannedEntry = null
                                         pendingPlannedExit = null
                                         plannedNote = ""
+                                        plannedCountries = emptyList()
                                     }
                                 }
                             )
@@ -401,8 +421,13 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
                     val picked = pickerState.selectedDateMillis?.toLocalDate() ?: LocalDate.now()
                     when (pickerMode) {
                         PickerMode.ENTRY -> {
-                            vm.addManualEntry(picked, manualEntryNote)
+                            vm.addManualEntry(
+                                picked,
+                                manualEntryNote,
+                                manualEntryCountries
+                            )
                             manualEntryNote = ""
+                            manualEntryCountries = emptyList()
                         }
                         PickerMode.EXIT -> vm.addManualExit(picked)
                         PickerMode.PLANNED_ENTRY -> pendingPlannedEntry = picked
@@ -453,12 +478,35 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
         )
     }
 
+    countryPickerTarget?.let { target ->
+        CountryPickerDialog(
+            title = if (target == CountryPickerTarget.MANUAL_ENTRY) {
+                "Select countries for next entry"
+            } else {
+                "Select countries for planned trip"
+            },
+            selectedCountryCodes = if (target == CountryPickerTarget.MANUAL_ENTRY) {
+                manualEntryCountries
+            } else {
+                plannedCountries
+            },
+            onDismiss = { countryPickerTarget = null },
+            onConfirm = { selected ->
+                when (target) {
+                    CountryPickerTarget.MANUAL_ENTRY -> manualEntryCountries = selected
+                    CountryPickerTarget.PLANNED_TRIP -> plannedCountries = selected
+                }
+                countryPickerTarget = null
+            }
+        )
+    }
+
     editingStay?.let { stay ->
         EditStayDialog(
             stay = stay,
             onDismiss = { editingStay = null },
-            onSave = { entryDate, exitDate, source, note ->
-                vm.updateStay(stay.id, entryDate, exitDate, source, note)
+            onSave = { entryDate, exitDate, source, note, countries ->
+                vm.updateStay(stay.id, entryDate, exitDate, source, note, countries)
                 editingStay = null
             },
             onDelete = {
@@ -472,16 +520,16 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
         EditPlannedTripDialog(
             trip = trip,
             onDismiss = { editingPlannedTrip = null },
-            onSave = { entryDate, exitDate, note ->
-                vm.updatePlannedTrip(trip.id, entryDate, exitDate, note)
+            onSave = { entryDate, exitDate, note, countries ->
+                vm.updatePlannedTrip(trip.id, entryDate, exitDate, note, countries)
                 editingPlannedTrip = null
             },
             onDelete = {
                 vm.deletePlannedTrip(trip.id)
                 editingPlannedTrip = null
             },
-            onConfirm = {
-                vm.confirmPlannedTrip(trip.id)
+            onConfirm = { entryDate, exitDate, note, countries ->
+                vm.confirmPlannedTrip(trip.id, entryDate, exitDate, note, countries)
                 editingPlannedTrip = null
             }
         )
@@ -667,9 +715,11 @@ private fun PlannedTripsCard(
     plannedEntry: LocalDate?,
     plannedExit: LocalDate?,
     note: String,
+    countries: List<String>,
     onPickEntry: () -> Unit,
     onPickExit: () -> Unit,
     onNoteChange: (String) -> Unit,
+    onPickCountries: () -> Unit,
     onAdd: () -> Unit
 ) {
     val formatter = remember { DateTimeFormatter.ofPattern("dd MMM yyyy") }
@@ -694,6 +744,10 @@ private fun PlannedTripsCard(
                 label = { Text("Note (optional)") },
                 modifier = Modifier.fillMaxWidth()
             )
+            CountrySelectionSummary(
+                selectedCountryCodes = countries,
+                onPickCountries = onPickCountries
+            )
             Button(onClick = onAdd, enabled = plannedEntry != null && plannedExit != null) {
                 Text("Add planned trip")
             }
@@ -713,6 +767,7 @@ private fun StayRow(stay: Stay, formatter: DateTimeFormatter, onClick: () -> Uni
             Text("Exit: ${stay.exitDate?.format(formatter) ?: "Open"}")
             Text(stayDurationSummary(stay), fontWeight = FontWeight.SemiBold)
             Text("Source: ${stay.source.name}")
+            if (stay.countries.isNotEmpty()) Text("Countries: ${formatCountryNames(stay.countries)}")
             if (stay.note.isNotBlank()) Text("Note: ${stay.note}")
             TextButton(onClick = onClick) { Text("Edit") }
         }
@@ -732,6 +787,7 @@ private fun PlannedTripRow(trip: PlannedTrip, formatter: DateTimeFormatter, onCl
             plannedTripDurationSummary(trip.entryDate, trip.exitDate)?.let {
                 Text(it, fontWeight = FontWeight.SemiBold)
             }
+            if (trip.countries.isNotEmpty()) Text("Countries: ${formatCountryNames(trip.countries)}")
             if (trip.note.isNotBlank()) Text("Note: ${trip.note}")
             TextButton(onClick = onClick) { Text("Edit") }
         }
@@ -742,7 +798,13 @@ private fun PlannedTripRow(trip: PlannedTrip, formatter: DateTimeFormatter, onCl
 private fun EditStayDialog(
     stay: Stay,
     onDismiss: () -> Unit,
-    onSave: (entryDate: LocalDate, exitDate: LocalDate?, source: EntrySource, note: String) -> Unit,
+    onSave: (
+        entryDate: LocalDate,
+        exitDate: LocalDate?,
+        source: EntrySource,
+        note: String,
+        countries: List<String>
+    ) -> Unit,
     onDelete: () -> Unit
 ) {
     var entryDateText by remember(stay.id) { mutableStateOf(stay.entryDate.toString()) }
@@ -750,6 +812,8 @@ private fun EditStayDialog(
     var exitDateText by remember(stay.id) { mutableStateOf(stay.exitDate?.toString().orEmpty()) }
     var source by remember(stay.id) { mutableStateOf(stay.source) }
     var noteText by remember(stay.id) { mutableStateOf(stay.note) }
+    var selectedCountryCodes by remember(stay.id) { mutableStateOf(stay.countries) }
+    var showCountryPicker by remember(stay.id) { mutableStateOf(false) }
     var errorMessage by remember(stay.id) { mutableStateOf<String?>(null) }
     val durationText = stayDurationSummary(
         entry = parseIsoDate(entryDateText),
@@ -779,7 +843,7 @@ private fun EditStayDialog(
                     parsedExit
                 }
                 errorMessage = null
-                onSave(entry, exit, source, noteText)
+                onSave(entry, exit, source, noteText, selectedCountryCodes)
             }) { Text("Save") }
         },
         dismissButton = {
@@ -835,24 +899,42 @@ private fun EditStayDialog(
                     label = { Text("Note") },
                     modifier = Modifier.fillMaxWidth()
                 )
+                CountrySelectionSummary(
+                    selectedCountryCodes = selectedCountryCodes,
+                    onPickCountries = { showCountryPicker = true }
+                )
                 TextButton(onClick = onDelete) { Text("Delete stay") }
                 errorMessage?.let { Text(text = it, color = MaterialTheme.colorScheme.error) }
             }
         }
     )
+
+    if (showCountryPicker) {
+        CountryPickerDialog(
+            title = "Select countries for stay",
+            selectedCountryCodes = selectedCountryCodes,
+            onDismiss = { showCountryPicker = false },
+            onConfirm = { selected ->
+                selectedCountryCodes = selected
+                showCountryPicker = false
+            }
+        )
+    }
 }
 
 @Composable
 private fun EditPlannedTripDialog(
     trip: PlannedTrip,
     onDismiss: () -> Unit,
-    onSave: (entryDate: LocalDate, exitDate: LocalDate, note: String) -> Unit,
+    onSave: (entryDate: LocalDate, exitDate: LocalDate, note: String, countries: List<String>) -> Unit,
     onDelete: () -> Unit,
-    onConfirm: () -> Unit
+    onConfirm: (entryDate: LocalDate, exitDate: LocalDate, note: String, countries: List<String>) -> Unit
 ) {
     var entryDateText by remember(trip.id) { mutableStateOf(trip.entryDate.toString()) }
     var exitDateText by remember(trip.id) { mutableStateOf(trip.exitDate.toString()) }
     var noteText by remember(trip.id) { mutableStateOf(trip.note) }
+    var selectedCountryCodes by remember(trip.id) { mutableStateOf(trip.countries) }
+    var showCountryPicker by remember(trip.id) { mutableStateOf(false) }
     var errorMessage by remember(trip.id) { mutableStateOf<String?>(null) }
     val durationText = plannedTripDurationSummary(
         entry = parseIsoDate(entryDateText),
@@ -871,7 +953,7 @@ private fun EditPlannedTripDialog(
                     exit.isBefore(entry) -> errorMessage = "Exit date cannot be before entry date."
                     else -> {
                         errorMessage = null
-                        onSave(entry, exit, noteText)
+                        onSave(entry, exit, noteText, selectedCountryCodes)
                     }
                 }
             }) { Text("Save") }
@@ -903,12 +985,40 @@ private fun EditPlannedTripDialog(
                     label = { Text("Note") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                TextButton(onClick = onConfirm) { Text("Confirm as stay") }
+                CountrySelectionSummary(
+                    selectedCountryCodes = selectedCountryCodes,
+                    onPickCountries = { showCountryPicker = true }
+                )
+                TextButton(onClick = {
+                    val entry = parseIsoDate(entryDateText)
+                    val exit = parseIsoDate(exitDateText)
+                    when {
+                        entry == null -> errorMessage = "Entry date must use YYYY-MM-DD."
+                        exit == null -> errorMessage = "Exit date must use YYYY-MM-DD."
+                        exit.isBefore(entry) -> errorMessage = "Exit date cannot be before entry date."
+                        else -> {
+                            errorMessage = null
+                            onConfirm(entry, exit, noteText, selectedCountryCodes)
+                        }
+                    }
+                }) { Text("Confirm as stay") }
                 TextButton(onClick = onDelete) { Text("Delete planned trip") }
                 errorMessage?.let { Text(text = it, color = MaterialTheme.colorScheme.error) }
             }
         }
     )
+
+    if (showCountryPicker) {
+        CountryPickerDialog(
+            title = "Select countries for planned trip",
+            selectedCountryCodes = selectedCountryCodes,
+            onDismiss = { showCountryPicker = false },
+            onConfirm = { selected ->
+                selectedCountryCodes = selected
+                showCountryPicker = false
+            }
+        )
+    }
 }
 
 @Composable
@@ -962,6 +1072,104 @@ private fun EditProfileDialog(
 
 private fun parseIsoDate(value: String): LocalDate? =
     runCatching { LocalDate.parse(value.trim()) }.getOrNull()
+
+@Composable
+private fun CountrySelectionSummary(
+    selectedCountryCodes: List<String>,
+    onPickCountries: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = if (selectedCountryCodes.isEmpty()) {
+                "Countries: none selected"
+            } else {
+                "Countries: ${formatCountryNames(selectedCountryCodes)}"
+            },
+            style = MaterialTheme.typography.bodyMedium
+        )
+        TextButton(onClick = onPickCountries) {
+            Text(if (selectedCountryCodes.isEmpty()) "Select countries" else "Edit countries")
+        }
+    }
+}
+
+@Composable
+private fun CountryPickerDialog(
+    title: String,
+    selectedCountryCodes: List<String>,
+    onDismiss: () -> Unit,
+    onConfirm: (List<String>) -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    var pendingSelection by remember(selectedCountryCodes) { mutableStateOf(selectedCountryCodes) }
+    val filteredCountries = SchengenCountryCatalog.filter(searchQuery, pendingSelection.toSet())
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = { onConfirm(pendingSelection) }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text("Search countries") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Text(
+                    text = "${pendingSelection.size} selected",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(filteredCountries, key = { it.code }) { country ->
+                        val isSelected = country.code in pendingSelection
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    pendingSelection = toggleCountrySelection(pendingSelection, country.code)
+                                }
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = isSelected,
+                                onCheckedChange = null
+                            )
+                            Column {
+                                Text(country.name)
+                                Text(country.code, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    )
+}
+
+private fun formatCountryNames(countryCodes: List<String>): String =
+    SchengenCountryCatalog.displayNames(countryCodes).joinToString()
+
+private fun toggleCountrySelection(selectedCountryCodes: List<String>, code: String): List<String> =
+    if (code in selectedCountryCodes) {
+        selectedCountryCodes.filterNot { it == code }
+    } else {
+        selectedCountryCodes + code
+    }
 
 private fun Long.toLocalDate(): LocalDate =
     Instant.ofEpochMilli(this).atZone(ZoneId.systemDefault()).toLocalDate()

@@ -9,5 +9,6 @@ data class Stay(
     val entryDate: LocalDate,
     val exitDate: LocalDate?,
     val source: EntrySource,
-    val note: String
+    val note: String,
+    val countries: List<String>
 )

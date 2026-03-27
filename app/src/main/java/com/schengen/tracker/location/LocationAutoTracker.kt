@@ -72,7 +72,7 @@ class LocationAutoTracker(
             ?: return AutoLocationCheckResult.CountryUnavailable
 
         val inSchengen = countryCode in SchengenCountries.isoCodes
-        repository.addAutoState(inSchengen, LocalDate.now())
+        repository.addAutoState(inSchengen, LocalDate.now(), countryCode)
         return AutoLocationCheckResult.Updated(countryCode, inSchengen)
     }
 
