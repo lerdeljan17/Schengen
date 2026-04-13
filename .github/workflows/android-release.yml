@@ -38,14 +38,19 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
 
-      - name: Build release APK
-        run: ./gradlew assembleRelease --stacktrace
+      - name: Build installable APK
+        run: ./gradlew assembleDebug --stacktrace
 
-      - name: Upload release APK artifact
+      - name: Prepare release APK
+        run: |
+          mkdir -p release-assets
+          cp app/build/outputs/apk/debug/*.apk "release-assets/Schengen Tracker.apk"
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-apk
-          path: app/build/outputs/apk/release/*.apk
+          name: Schengen Tracker
+          path: release-assets/Schengen Tracker.apk
           if-no-files-found: error
 
       - name: Prepare release metadata
@@ -61,7 +66,10 @@ jobs:
 
           Checks run:
           - ./gradlew testDebugUnitTest
-          - ./gradlew assembleRelease
+          - ./gradlew assembleDebug
+
+          APK:
+          - Schengen Tracker.apk
           EOF
 
           echo "short_sha=${SHORT_SHA}" >> "${GITHUB_OUTPUT}"
@@ -72,7 +80,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ steps.release.outputs.tag }}" \
-            app/build/outputs/apk/release/*.apk \
+            "release-assets/Schengen Tracker.apk" \
             --target "${GITHUB_SHA}" \
             --title "Main release ${{ steps.release.outputs.short_sha }}" \
             --notes-file release-notes.md
