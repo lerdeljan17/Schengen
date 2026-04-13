@@ -77,13 +77,17 @@ class SchengenCalculator {
         return unlockedDays
     }
 
-    fun occupiedDaysInMonth(month: YearMonth, stays: List<Stay>): Set<LocalDate> {
+    fun occupiedDaysInMonth(
+        month: YearMonth,
+        stays: List<Stay>,
+        todayDate: LocalDate = LocalDate.now()
+    ): Set<LocalDate> {
         val start = month.atDay(1)
         val end = month.atEndOfMonth()
         val occupied = mutableSetOf<LocalDate>()
 
         stays.forEach { stay ->
-            val stayEnd = stay.exitDate ?: LocalDate.now()
+            val stayEnd = stay.exitDate ?: todayDate
             addRange(occupied, maxOf(stay.entryDate, start), minOf(stayEnd, end))
         }
         return occupied
@@ -121,7 +125,7 @@ class SchengenCalculator {
 
     fun nextAlertThreshold(availableDays: Int): Int? {
         val thresholds = listOf(30, 15, 7, 1)
-        return thresholds.firstOrNull { availableDays <= it }
+        return thresholds.lastOrNull { availableDays <= it }
     }
 
     private fun addRange(days: MutableSet<LocalDate>, start: LocalDate, end: LocalDate) {

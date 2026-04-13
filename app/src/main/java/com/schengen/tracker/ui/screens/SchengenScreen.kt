@@ -67,7 +67,6 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 
 private enum class PickerMode { ENTRY, EXIT, PLANNED_ENTRY, PLANNED_EXIT, TARGET_DATE }
 private enum class AppTab(val title: String) { MAIN("Main"), HISTORY("History"), PLANNED("Planned"), TOOLS("Tools") }
@@ -1071,7 +1070,7 @@ private fun EditProfileDialog(
 }
 
 private fun parseIsoDate(value: String): LocalDate? =
-    runCatching { LocalDate.parse(value.trim()) }.getOrNull()
+    SchengenScreenText.parseIsoDate(value)
 
 @Composable
 private fun CountrySelectionSummary(
@@ -1162,106 +1161,34 @@ private fun CountryPickerDialog(
 }
 
 private fun formatCountryNames(countryCodes: List<String>): String =
-    SchengenCountryCatalog.displayNames(countryCodes).joinToString()
+    SchengenScreenText.formatCountryNames(countryCodes)
 
 private fun toggleCountrySelection(selectedCountryCodes: List<String>, code: String): List<String> =
-    if (code in selectedCountryCodes) {
-        selectedCountryCodes.filterNot { it == code }
-    } else {
-        selectedCountryCodes + code
-    }
+    SchengenScreenText.toggleCountrySelection(selectedCountryCodes, code)
 
 private fun Long.toLocalDate(): LocalDate =
     Instant.ofEpochMilli(this).atZone(ZoneId.systemDefault()).toLocalDate()
 
-private data class UnlockPeriod(
-    val startDate: LocalDate,
-    val endDate: LocalDate,
-    val unlockedDays: Int
-)
+private fun summarizeUnlockPeriods(unlockedDaysByDate: Map<LocalDate, Int>): List<UnlockPeriod> =
+    SchengenScreenText.summarizeUnlockPeriods(unlockedDaysByDate)
 
-private fun summarizeUnlockPeriods(unlockedDaysByDate: Map<LocalDate, Int>): List<UnlockPeriod> {
-    if (unlockedDaysByDate.isEmpty()) return emptyList()
-    val sortedEntries = unlockedDaysByDate.entries.sortedBy { it.key }
+private fun formatUnlockPeriod(period: UnlockPeriod, formatter: DateTimeFormatter): String =
+    SchengenScreenText.formatUnlockPeriod(period, formatter)
 
-    val periods = mutableListOf<UnlockPeriod>()
-    var periodStart = sortedEntries.first().key
-    var periodEnd = periodStart
-    var periodUnlockedDays = sortedEntries.first().value
+private fun stayDurationSummary(stay: Stay): String =
+    SchengenScreenText.stayDurationSummary(stay)
 
-    for ((date, unlockedDays) in sortedEntries.drop(1)) {
-        if (date == periodEnd.plusDays(1)) {
-            periodEnd = date
-            periodUnlockedDays += unlockedDays
-        } else {
-            periods.add(
-                UnlockPeriod(
-                    startDate = periodStart,
-                    endDate = periodEnd,
-                    unlockedDays = periodUnlockedDays
-                )
-            )
-            periodStart = date
-            periodEnd = date
-            periodUnlockedDays = unlockedDays
-        }
-    }
+private fun stayDurationSummary(entry: LocalDate?, exit: LocalDate?, hasExitDate: Boolean): String? =
+    SchengenScreenText.stayDurationSummary(entry, exit, hasExitDate)
 
-    periods.add(
-        UnlockPeriod(
-            startDate = periodStart,
-            endDate = periodEnd,
-            unlockedDays = periodUnlockedDays
-        )
-    )
-    return periods
-}
+private fun plannedTripDurationSummary(entry: LocalDate?, exit: LocalDate?): String? =
+    SchengenScreenText.plannedTripDurationSummary(entry, exit)
 
-private fun formatUnlockPeriod(period: UnlockPeriod, formatter: DateTimeFormatter): String {
-    val dateLabel = if (period.startDate == period.endDate) {
-        period.startDate.format(formatter)
-    } else {
-        "${period.startDate.format(formatter)} - ${period.endDate.format(formatter)}"
-    }
-    return "$dateLabel: ${formatDayCount(period.unlockedDays)}"
-}
+private fun formatDayCount(value: Int): String =
+    SchengenScreenText.formatDayCount(value)
 
-private fun stayDurationSummary(stay: Stay): String {
-    return stayDurationSummary(
-        entry = stay.entryDate,
-        exit = stay.exitDate,
-        hasExitDate = stay.exitDate != null
-    ).orEmpty()
-}
-
-private fun stayDurationSummary(entry: LocalDate?, exit: LocalDate?, hasExitDate: Boolean): String? {
-    if (entry == null) return null
-    val effectiveExit = if (hasExitDate) exit ?: return null else LocalDate.now()
-    if (effectiveExit.isBefore(entry)) return null
-    val label = if (hasExitDate) "Duration" else "Days so far"
-    return "$label: ${formatDayCount(inclusiveDayCount(entry, effectiveExit))}"
-}
-
-private fun plannedTripDurationSummary(entry: LocalDate?, exit: LocalDate?): String? {
-    if (entry == null || exit == null || exit.isBefore(entry)) return null
-    return "Duration: ${formatDayCount(inclusiveDayCount(entry, exit))}"
-}
-
-private fun inclusiveDayCount(start: LocalDate, end: LocalDate): Int {
-    return ChronoUnit.DAYS.between(start, end).toInt() + 1
-}
-
-private fun formatDayCount(value: Int): String {
-    return if (value == 1) "1 day" else "$value days"
-}
-
-private fun formatDelta(value: Int): String {
-    return when {
-        value > 0 -> "+$value days"
-        value < 0 -> "$value days"
-        else -> "0 days"
-    }
-}
+private fun formatDelta(value: Int): String =
+    SchengenScreenText.formatDelta(value)
 
 private fun hasForegroundLocationPermission(context: Context): Boolean {
     val hasFine = ContextCompat.checkSelfPermission(
