@@ -101,10 +101,26 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
     )
     val coroutineScope = rememberCoroutineScope()
 
-    val permissionLauncher = rememberLauncherForActivityResult(
+    val backgroundPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) {
+        if (hasForegroundLocationPermission(context)) {
+            vm.setLocationTracking(true)
+        }
+    }
+
+    val foregroundPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) {
-        vm.setLocationTracking(hasForegroundLocationPermission(context))
+        val hasForegroundLocation = hasForegroundLocationPermission(context)
+        vm.setLocationTracking(hasForegroundLocation)
+        if (
+            hasForegroundLocation &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            !hasBackgroundLocationPermission(context)
+        ) {
+            backgroundPermissionLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        }
     }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -277,28 +293,24 @@ fun SchengenScreen(vm: SchengenViewModel = viewModel()) {
                                             onCheckedChange = { enabled ->
                                                 if (enabled) {
                                                     if (hasForegroundLocationPermission(context)) {
+                                                        vm.setLocationTracking(true)
                                                         if (
                                                             Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
                                                             !hasBackgroundLocationPermission(context)
                                                         ) {
-                                                            permissionLauncher.launch(
-                                                                arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                                                            backgroundPermissionLauncher.launch(
+                                                                Manifest.permission.ACCESS_BACKGROUND_LOCATION
                                                             )
-                                                        } else {
-                                                            vm.setLocationTracking(true)
                                                         }
                                                     } else {
                                                         val permissions = buildList {
                                                             add(Manifest.permission.ACCESS_FINE_LOCATION)
                                                             add(Manifest.permission.ACCESS_COARSE_LOCATION)
-                                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                                                add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-                                                            }
                                                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                                                 add(Manifest.permission.POST_NOTIFICATIONS)
                                                             }
                                                         }
-                                                        permissionLauncher.launch(permissions.toTypedArray())
+                                                        foregroundPermissionLauncher.launch(permissions.toTypedArray())
                                                     }
                                                 } else {
                                                     vm.setLocationTracking(false)
