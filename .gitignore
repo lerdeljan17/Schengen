@@ -18,6 +18,7 @@ local.properties
 *.keystore
 *.pem
 *.p12
+keystore-secrets/
 
 # OS files
 .DS_Store
