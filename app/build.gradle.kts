@@ -5,6 +5,22 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val ciVersionCode = providers.environmentVariable("GITHUB_RUN_NUMBER")
+    .map { it.toInt() }
+    .orElse(1)
+    .get()
+
+val releaseKeystorePath = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull
+val releaseKeystorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD").orNull
+val hasReleaseSigning = listOf(
+    releaseKeystorePath,
+    releaseKeystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.schengen.tracker"
     compileSdk = 34
@@ -13,7 +29,7 @@ android {
         applicationId = "com.schengen.tracker"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
+        versionCode = ciVersionCode
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -22,9 +38,23 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseKeystorePath!!)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

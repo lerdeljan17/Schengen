@@ -101,6 +101,17 @@ The backup payload is a single JSON file named `schengen-backup.json` stored in 
 
 Restoring replaces local data with the snapshot from Drive.
 
+## Release signing
+
+GitHub releases are built as signed release APKs. Configure these repository secrets before relying on automated releases:
+
+- `ANDROID_RELEASE_KEYSTORE_BASE64`: base64-encoded `.jks` or `.keystore` file
+- `ANDROID_RELEASE_KEYSTORE_PASSWORD`
+- `ANDROID_RELEASE_KEY_ALIAS`
+- `ANDROID_RELEASE_KEY_PASSWORD`
+
+Android can only update an installed app when the new APK has the same `applicationId`, is signed with the same key, and has a non-lower `versionCode`. If a device already has a debug-signed or differently signed build installed, uninstall that build once before installing the signed release APK.
+
 ## Permissions requested
 
 - `INTERNET` (Nominatim fallback and Google Drive API calls)

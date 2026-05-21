@@ -38,13 +38,45 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
 
-      - name: Build installable APK
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Decode release keystore
+        env:
+          ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          if [ -z "${ANDROID_RELEASE_KEYSTORE_BASE64}" ]; then
+            echo "::error::Missing ANDROID_RELEASE_KEYSTORE_BASE64 secret"
+            exit 1
+          fi
+          if [ -z "${ANDROID_RELEASE_KEYSTORE_PASSWORD}" ]; then
+            echo "::error::Missing ANDROID_RELEASE_KEYSTORE_PASSWORD secret"
+            exit 1
+          fi
+          if [ -z "${ANDROID_RELEASE_KEY_ALIAS}" ]; then
+            echo "::error::Missing ANDROID_RELEASE_KEY_ALIAS secret"
+            exit 1
+          fi
+          if [ -z "${ANDROID_RELEASE_KEY_PASSWORD}" ]; then
+            echo "::error::Missing ANDROID_RELEASE_KEY_PASSWORD secret"
+            exit 1
+          fi
+
+          mkdir -p "${RUNNER_TEMP}/keystore"
+          printf "%s" "${ANDROID_RELEASE_KEYSTORE_BASE64}" | base64 --decode > "${RUNNER_TEMP}/keystore/release.jks"
+
+      - name: Build signed release APK
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/keystore/release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --stacktrace
 
       - name: Prepare release APK
         run: |
           mkdir -p release-assets
-          cp app/build/outputs/apk/debug/*.apk "release-assets/Schengen Tracker.apk"
+          cp app/build/outputs/apk/release/app-release.apk "release-assets/Schengen Tracker.apk"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -66,7 +98,7 @@ jobs:
 
           Checks run:
           - ./gradlew testDebugUnitTest
-          - ./gradlew assembleDebug
+          - ./gradlew assembleRelease
 
           APK:
           - Schengen Tracker.apk
