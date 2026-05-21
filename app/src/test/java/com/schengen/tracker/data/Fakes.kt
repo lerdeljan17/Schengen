@@ -5,31 +5,24 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 
-internal class FakeStayDao : StayDao {
-    private val stays = MutableStateFlow<List<StayEntity>>(emptyList())
+internal class FakeTripDao : TripDao {
+    private val trips = MutableStateFlow<List<TripEntity>>(emptyList())
     private val profiles = MutableStateFlow<List<ProfileEntity>>(emptyList())
-    private val plannedTrips = MutableStateFlow<List<PlannedTripEntity>>(emptyList())
 
-    private var nextStayId = 1L
+    private var nextTripId = 1L
     private var nextProfileId = 1L
-    private var nextPlannedTripId = 1L
 
-    override fun observeAll(profileId: Long): Flow<List<StayEntity>> =
-        stays.map { items ->
+    override fun observeTrips(profileId: Long): Flow<List<TripEntity>> =
+        trips.map { items ->
             items.filter { it.profileId == profileId }.sortedByDescending { it.entryDate }
         }
 
     override fun observeProfiles(): Flow<List<ProfileEntity>> =
         profiles.map { items -> items.sortedBy { it.name } }
 
-    override fun observePlannedTrips(profileId: Long): Flow<List<PlannedTripEntity>> =
-        plannedTrips.map { items ->
-            items.filter { it.profileId == profileId }.sortedBy { it.entryDate }
-        }
-
-    override suspend fun insert(stay: StayEntity): Long {
-        val entity = stay.withId { nextStayId++ }
-        stays.value = stays.value + entity
+    override suspend fun insertTrip(trip: TripEntity): Long {
+        val entity = trip.withId { nextTripId++ }
+        trips.value = trips.value + entity
         return entity.id
     }
 
@@ -39,64 +32,36 @@ internal class FakeStayDao : StayDao {
         return entity.id
     }
 
-    override suspend fun insertPlannedTrip(trip: PlannedTripEntity): Long {
-        val entity = trip.withId { nextPlannedTripId++ }
-        plannedTrips.value = plannedTrips.value + entity
-        return entity.id
-    }
-
-    override suspend fun updateStay(stay: StayEntity) {
-        stays.value = stays.value.map { if (it.id == stay.id) stay else it }
-    }
-
-    override suspend fun updatePlannedTrip(trip: PlannedTripEntity) {
-        plannedTrips.value = plannedTrips.value.map { if (it.id == trip.id) trip else it }
+    override suspend fun updateTrip(trip: TripEntity) {
+        trips.value = trips.value.map { if (it.id == trip.id) trip else it }
     }
 
     override suspend fun updateProfile(profile: ProfileEntity) {
         profiles.value = profiles.value.map { if (it.id == profile.id) profile else it }
     }
 
-    override suspend fun delete(stay: StayEntity) {
-        deleteById(stay.id)
+    override suspend fun deleteTripById(id: Long) {
+        trips.value = trips.value.filterNot { it.id == id }
     }
 
-    override suspend fun deleteById(id: Long) {
-        stays.value = stays.value.filterNot { it.id == id }
-    }
-
-    override suspend fun deletePlannedTripById(id: Long) {
-        plannedTrips.value = plannedTrips.value.filterNot { it.id == id }
-    }
-
-    override suspend fun deleteStaysByProfileId(profileId: Long) {
-        stays.value = stays.value.filterNot { it.profileId == profileId }
-    }
-
-    override suspend fun deletePlannedTripsByProfileId(profileId: Long) {
-        plannedTrips.value = plannedTrips.value.filterNot { it.profileId == profileId }
+    override suspend fun deleteTripsByProfileId(profileId: Long) {
+        trips.value = trips.value.filterNot { it.profileId == profileId }
     }
 
     override suspend fun deleteProfileById(id: Long) {
         profiles.value = profiles.value.filterNot { it.id == id }
     }
 
-    override suspend fun getLatestOpenStay(profileId: Long): StayEntity? =
-        stays.value
+    override suspend fun getLatestOpenTrip(profileId: Long): TripEntity? =
+        trips.value
             .filter { it.profileId == profileId && it.exitDate == null }
             .maxByOrNull { it.entryDate }
 
-    override suspend fun getStayById(id: Long): StayEntity? =
-        stays.value.firstOrNull { it.id == id }
+    override suspend fun getTripById(id: Long): TripEntity? =
+        trips.value.firstOrNull { it.id == id }
 
-    override suspend fun getPlannedTripById(id: Long): PlannedTripEntity? =
-        plannedTrips.value.firstOrNull { it.id == id }
-
-    override suspend fun getAllStays(profileId: Long): List<StayEntity> =
-        stays.value.filter { it.profileId == profileId }.sortedByDescending { it.entryDate }
-
-    override suspend fun getAllPlannedTrips(profileId: Long): List<PlannedTripEntity> =
-        plannedTrips.value.filter { it.profileId == profileId }.sortedBy { it.entryDate }
+    override suspend fun getAllTrips(profileId: Long): List<TripEntity> =
+        trips.value.filter { it.profileId == profileId }.sortedByDescending { it.entryDate }
 
     override suspend fun getAllProfiles(): List<ProfileEntity> =
         profiles.value.sortedBy { it.name }
@@ -104,14 +69,11 @@ internal class FakeStayDao : StayDao {
     override suspend fun getProfileById(id: Long): ProfileEntity? =
         profiles.value.firstOrNull { it.id == id }
 
-    private fun StayEntity.withId(nextId: () -> Long): StayEntity =
-        if (id == 0L) copy(id = nextId()) else also { nextStayId = maxOf(nextStayId, id + 1) }
+    private fun TripEntity.withId(nextId: () -> Long): TripEntity =
+        if (id == 0L) copy(id = nextId()) else also { nextTripId = maxOf(nextTripId, id + 1) }
 
     private fun ProfileEntity.withId(nextId: () -> Long): ProfileEntity =
         if (id == 0L) copy(id = nextId()) else also { nextProfileId = maxOf(nextProfileId, id + 1) }
-
-    private fun PlannedTripEntity.withId(nextId: () -> Long): PlannedTripEntity =
-        if (id == 0L) copy(id = nextId()) else also { nextPlannedTripId = maxOf(nextPlannedTripId, id + 1) }
 }
 
 internal class FakeSharedPreferences(

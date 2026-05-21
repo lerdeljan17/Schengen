@@ -2,9 +2,8 @@ package com.schengen.tracker.data
 
 import android.content.SharedPreferences
 import com.schengen.tracker.data.AppTypeConverters.Companion.decodeCountryCodes
-import com.schengen.tracker.domain.PlannedTrip
 import com.schengen.tracker.domain.Profile
-import com.schengen.tracker.domain.Stay
+import com.schengen.tracker.domain.Trip
 import com.schengen.tracker.location.SchengenCountryCatalog
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -17,8 +16,8 @@ import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.time.LocalDate
 
-class StayRepository(
-    private val dao: StayDao,
+class TripRepository(
+    private val dao: TripDao,
     private val prefs: SharedPreferences
 ) {
     private val activeProfileIdFlow = MutableStateFlow(readActiveProfileId())
@@ -37,19 +36,18 @@ class StayRepository(
         prefs.edit().putBoolean(KEY_LOCATION_TRACKING_ENABLED, enabled).commit()
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    fun observeStaysForActiveProfile(): Flow<List<Stay>> {
-        return activeProfileIdFlow
-            .filterNotNull()
-            .flatMapLatest { profileId -> dao.observeAll(profileId) }
-            .map { entities -> entities.map { it.toDomain() } }
+    fun isOverstayAlertsEnabled(): Boolean =
+        prefs.getBoolean(KEY_OVERSTAY_ALERTS_ENABLED, true)
+
+    fun setOverstayAlertsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_OVERSTAY_ALERTS_ENABLED, enabled).apply()
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun observePlannedTripsForActiveProfile(): Flow<List<PlannedTrip>> {
+    fun observeTripsForActiveProfile(): Flow<List<Trip>> {
         return activeProfileIdFlow
             .filterNotNull()
-            .flatMapLatest { profileId -> dao.observePlannedTrips(profileId) }
+            .flatMapLatest { profileId -> dao.observeTrips(profileId) }
             .map { entities -> entities.map { it.toDomain() } }
     }
 
@@ -76,54 +74,43 @@ class StayRepository(
         activeProfileIdFlow.value = id
     }
 
-    suspend fun addManualEntry(entryDate: LocalDate, note: String, countries: List<String>) {
-        val profileId = requireActiveProfileId() ?: return
-        dao.insert(
-            StayEntity(
+    suspend fun addTrip(
+        entryDate: LocalDate,
+        exitDate: LocalDate?,
+        source: EntrySource = EntrySource.MANUAL,
+        note: String = "",
+        countries: List<String> = emptyList()
+    ): Boolean {
+        if (exitDate != null && exitDate.isBefore(entryDate)) return false
+        val profileId = requireActiveProfileId() ?: return false
+        dao.insertTrip(
+            TripEntity(
                 profileId = profileId,
                 entryDate = entryDate.toString(),
-                source = EntrySource.MANUAL,
+                exitDate = exitDate?.toString(),
+                source = source,
                 note = note.trim(),
                 countries = normalizeCountryCodes(countries)
             )
         )
+        return true
     }
 
     suspend fun addManualExit(exitDate: LocalDate): Boolean {
         val profileId = requireActiveProfileId() ?: return false
-        val open = dao.getLatestOpenStay(profileId) ?: return false
+        val open = dao.getLatestOpenTrip(profileId) ?: return false
         if (LocalDate.parse(open.entryDate).isAfter(exitDate)) return false
-        dao.updateStay(open.copy(exitDate = exitDate.toString()))
-        return true
-    }
-
-    suspend fun addPlannedTrip(
-        entryDate: LocalDate,
-        exitDate: LocalDate,
-        note: String,
-        countries: List<String>
-    ): Boolean {
-        if (exitDate.isBefore(entryDate)) return false
-        val profileId = requireActiveProfileId() ?: return false
-        dao.insertPlannedTrip(
-            PlannedTripEntity(
-                profileId = profileId,
-                entryDate = entryDate.toString(),
-                exitDate = exitDate.toString(),
-                note = note.trim(),
-                countries = normalizeCountryCodes(countries)
-            )
-        )
+        dao.updateTrip(open.copy(exitDate = exitDate.toString()))
         return true
     }
 
     suspend fun addAutoState(inSchengen: Boolean, date: LocalDate, countryCode: String? = null) {
         val profileId = requireActiveProfileId() ?: return
-        val open = dao.getLatestOpenStay(profileId)
+        val open = dao.getLatestOpenTrip(profileId)
         val normalizedCountryCode = countryCode?.let(SchengenCountryCatalog::normalizeCode)
         if (inSchengen && open == null) {
-            dao.insert(
-                StayEntity(
+            dao.insertTrip(
+                TripEntity(
                     profileId = profileId,
                     entryDate = date.toString(),
                     source = EntrySource.AUTO,
@@ -136,7 +123,7 @@ class StayRepository(
         if (inSchengen && open != null) {
             val updatedCountries = normalizeCountryCodes(open.countries + listOfNotNull(normalizedCountryCode))
             if (updatedCountries != open.countries) {
-                dao.updateStay(open.copy(countries = updatedCountries))
+                dao.updateTrip(open.copy(countries = updatedCountries))
             }
             return
         }
@@ -144,12 +131,12 @@ class StayRepository(
         if (!inSchengen && open != null) {
             val entry = LocalDate.parse(open.entryDate)
             if (!entry.isAfter(date)) {
-                dao.updateStay(open.copy(exitDate = date.toString()))
+                dao.updateTrip(open.copy(exitDate = date.toString()))
             }
         }
     }
 
-    suspend fun updateStay(
+    suspend fun updateTrip(
         id: Long,
         entryDate: LocalDate,
         exitDate: LocalDate?,
@@ -158,32 +145,12 @@ class StayRepository(
         countries: List<String>
     ): Boolean {
         if (exitDate != null && exitDate.isBefore(entryDate)) return false
-        val stay = dao.getStayById(id) ?: return false
-        dao.updateStay(
-            stay.copy(
+        val trip = dao.getTripById(id) ?: return false
+        dao.updateTrip(
+            trip.copy(
                 entryDate = entryDate.toString(),
                 exitDate = exitDate?.toString(),
                 source = source,
-                note = note.trim(),
-                countries = normalizeCountryCodes(countries)
-            )
-        )
-        return true
-    }
-
-    suspend fun updatePlannedTrip(
-        id: Long,
-        entryDate: LocalDate,
-        exitDate: LocalDate,
-        note: String,
-        countries: List<String>
-    ): Boolean {
-        if (exitDate.isBefore(entryDate)) return false
-        val trip = dao.getPlannedTripById(id) ?: return false
-        dao.updatePlannedTrip(
-            trip.copy(
-                entryDate = entryDate.toString(),
-                exitDate = exitDate.toString(),
                 note = note.trim(),
                 countries = normalizeCountryCodes(countries)
             )
@@ -204,43 +171,22 @@ class StayRepository(
         return true
     }
 
-    suspend fun deleteStayById(id: Long) {
-        dao.deleteById(id)
+    suspend fun deleteTripById(id: Long) {
+        dao.deleteTripById(id)
     }
 
-    suspend fun deletePlannedTripById(id: Long) {
-        dao.deletePlannedTripById(id)
+    suspend fun deleteAllTripsForActiveProfile() {
+        val profileId = requireActiveProfileId() ?: return
+        dao.deleteTripsByProfileId(profileId)
     }
 
-    suspend fun confirmPlannedTripById(
-        id: Long,
-        entryDate: LocalDate? = null,
-        exitDate: LocalDate? = null,
-        note: String? = null,
-        countries: List<String>? = null
-    ): Boolean {
-        val trip = dao.getPlannedTripById(id) ?: return false
-        val resolvedEntryDate = entryDate ?: LocalDate.parse(trip.entryDate)
-        val resolvedExitDate = exitDate ?: LocalDate.parse(trip.exitDate)
-        if (resolvedExitDate.isBefore(resolvedEntryDate)) return false
-        dao.insert(
-            StayEntity(
-                profileId = trip.profileId,
-                entryDate = resolvedEntryDate.toString(),
-                exitDate = resolvedExitDate.toString(),
-                source = EntrySource.MANUAL,
-                note = (note ?: trip.note).trim(),
-                countries = normalizeCountryCodes(countries ?: trip.countries)
-            )
-        )
-        dao.deletePlannedTripById(id)
-        return true
+    suspend fun deleteAllTripsAllProfiles() {
+        dao.getAllProfiles().forEach { dao.deleteTripsByProfileId(it.id) }
     }
 
     suspend fun deleteProfileById(id: Long): Boolean {
         val existing = dao.getProfileById(id) ?: return false
-        dao.deleteStaysByProfileId(existing.id)
-        dao.deletePlannedTripsByProfileId(existing.id)
+        dao.deleteTripsByProfileId(existing.id)
         dao.deleteProfileById(existing.id)
 
         val remaining = dao.getAllProfiles()
@@ -271,33 +217,16 @@ class StayRepository(
                 )
             )
 
-            dao.getAllStays(profile.id).forEach { stay ->
+            dao.getAllTrips(profile.id).forEach { trip ->
                 writer.appendLine(
                     encodeRow(
                         listOf(
-                            "STAY",
-                            profile.name,
-                            profile.passportNumber,
-                            stay.entryDate,
-                            stay.exitDate ?: "",
-                            stay.source.name,
-                            stay.note,
-                            formatCountriesForCsv(stay.countries)
-                        )
-                    )
-                )
-            }
-
-            dao.getAllPlannedTrips(profile.id).forEach { trip ->
-                writer.appendLine(
-                    encodeRow(
-                        listOf(
-                            "PLANNED",
+                            "TRIP",
                             profile.name,
                             profile.passportNumber,
                             trip.entryDate,
-                            trip.exitDate,
-                            "",
+                            trip.exitDate ?: "",
+                            trip.source.name,
                             trip.note,
                             formatCountriesForCsv(trip.countries)
                         )
@@ -343,14 +272,14 @@ class StayRepository(
                     importedRows += 1
                 }
 
-                "STAY" -> {
+                "TRIP", "STAY" -> {
                     val entry = fields.getOrElse(3) { "" }
                     if (entry.isBlank()) return@forEach
                     val exit = fields.getOrElse(4) { "" }.ifBlank { null }
                     val source = runCatching { EntrySource.valueOf(fields.getOrElse(5) { "MANUAL" }) }
                         .getOrDefault(EntrySource.MANUAL)
-                    dao.insert(
-                        StayEntity(
+                    dao.insertTrip(
+                        TripEntity(
                             profileId = resolvedProfileId,
                             entryDate = entry,
                             exitDate = exit,
@@ -366,11 +295,12 @@ class StayRepository(
                     val entry = fields.getOrElse(3) { "" }
                     val exit = fields.getOrElse(4) { "" }
                     if (entry.isBlank() || exit.isBlank()) return@forEach
-                    dao.insertPlannedTrip(
-                        PlannedTripEntity(
+                    dao.insertTrip(
+                        TripEntity(
                             profileId = resolvedProfileId,
                             entryDate = entry,
                             exitDate = exit,
+                            source = EntrySource.MANUAL,
                             note = fields.getOrElse(6) { "" },
                             countries = parseImportedCountries(fields.getOrElse(7) { "" })
                         )
@@ -393,11 +323,48 @@ class StayRepository(
         return Profile(profile.id, profile.name, profile.passportNumber)
     }
 
-    suspend fun getSnapshotForActiveProfile(): Pair<List<Stay>, List<PlannedTrip>> {
-        val profileId = requireActiveProfileId() ?: return emptyList<Stay>() to emptyList()
-        val stays = dao.getAllStays(profileId).map { it.toDomain() }
-        val planned = dao.getAllPlannedTrips(profileId).map { it.toDomain() }
-        return stays to planned
+    suspend fun getAllProfiles(): List<Profile> =
+        dao.getAllProfiles().map { Profile(it.id, it.name, it.passportNumber) }
+
+    suspend fun getTripsSnapshotForActiveProfile(): List<Trip> {
+        val profileId = requireActiveProfileId() ?: return emptyList()
+        return dao.getAllTrips(profileId).map { it.toDomain() }
+    }
+
+    suspend fun getAllTripsAllProfiles(): Map<Profile, List<Trip>> {
+        val profiles = dao.getAllProfiles()
+        return profiles.associate { profile ->
+            Profile(profile.id, profile.name, profile.passportNumber) to
+                dao.getAllTrips(profile.id).map { it.toDomain() }
+        }
+    }
+
+    suspend fun replaceAllData(
+        profiles: List<Profile>,
+        tripsByProfileName: Map<String, List<Trip>>
+    ) {
+        dao.getAllProfiles().forEach { dao.deleteTripsByProfileId(it.id) }
+        dao.getAllProfiles().forEach { dao.deleteProfileById(it.id) }
+
+        profiles.forEach { profile ->
+            val newId = dao.insertProfile(
+                ProfileEntity(name = profile.name, passportNumber = profile.passportNumber)
+            )
+            tripsByProfileName[profile.name]?.forEach { trip ->
+                dao.insertTrip(
+                    TripEntity(
+                        profileId = newId,
+                        entryDate = trip.entryDate.toString(),
+                        exitDate = trip.exitDate?.toString(),
+                        source = trip.source,
+                        note = trip.note,
+                        countries = normalizeCountryCodes(trip.countries)
+                    )
+                )
+            }
+        }
+
+        ensureDefaultProfile()
     }
 
     private suspend fun requireActiveProfileId(): Long? {
@@ -410,8 +377,8 @@ class StayRepository(
         return value.takeIf { it > 0 }
     }
 
-    private fun StayEntity.toDomain(): Stay {
-        return Stay(
+    private fun TripEntity.toDomain(): Trip {
+        return Trip(
             id = id,
             profileId = profileId,
             entryDate = LocalDate.parse(entryDate),
@@ -422,20 +389,10 @@ class StayRepository(
         )
     }
 
-    private fun PlannedTripEntity.toDomain(): PlannedTrip {
-        return PlannedTrip(
-            id = id,
-            profileId = profileId,
-            entryDate = LocalDate.parse(entryDate),
-            exitDate = LocalDate.parse(exitDate),
-            note = note,
-            countries = normalizeCountryCodes(countries)
-        )
-    }
-
     companion object {
         private const val KEY_ACTIVE_PROFILE_ID = "active_profile_id"
         private const val KEY_LOCATION_TRACKING_ENABLED = "location_tracking_enabled"
+        private const val KEY_OVERSTAY_ALERTS_ENABLED = "overstay_alerts_enabled"
 
         private fun encodeRow(values: List<String>): String =
             values.joinToString(",") { value ->

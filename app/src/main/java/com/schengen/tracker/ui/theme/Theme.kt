@@ -1,29 +1,30 @@
 package com.schengen.tracker.ui.theme
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-
-private val LightScheme = lightColorScheme(
-    primary = SlateBlue,
-    secondary = SoftGold,
-    tertiary = Mint
-)
-
-private val DarkScheme = darkColorScheme(
-    primary = SoftGold,
-    secondary = SlateBlue,
-    tertiary = Mint
-)
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.schengen.tracker.SchengenApp
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun SchengenTrackerTheme(
-    darkTheme: Boolean = false,
     content: @Composable () -> Unit
 ) {
+    val context = LocalContext.current
+    val app = context.applicationContext as SchengenApp
+    val themeState by app.themePreferences.state.collectAsState()
+
+    val useDark = when (themeState.appearanceMode) {
+        AppearanceMode.LIGHT -> false
+        AppearanceMode.DARK -> true
+        AppearanceMode.SYSTEM -> isSystemInDarkTheme()
+    }
+    val spec = ColorThemes.byId(themeState.colorThemeId)
+
     MaterialTheme(
-        colorScheme = if (darkTheme) DarkScheme else LightScheme,
+        colorScheme = if (useDark) spec.dark else spec.light,
         typography = Typography,
         content = content
     )

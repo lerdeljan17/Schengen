@@ -8,7 +8,7 @@ import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
-import com.schengen.tracker.data.StayRepository
+import com.schengen.tracker.data.TripRepository
 import kotlinx.coroutines.tasks.await
 import java.time.LocalDate
 
@@ -22,7 +22,7 @@ sealed interface AutoLocationCheckResult {
 
 class LocationAutoTracker(
     private val context: Context,
-    private val repository: StayRepository
+    private val repository: TripRepository
 ) {
     companion object {
         private const val MAX_LOCATION_AGE_MS = 3 * 60 * 1000L

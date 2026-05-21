@@ -17,16 +17,18 @@ class OverstayAlertWorker(
     override suspend fun doWork(): Result {
         val app = applicationContext as SchengenApp
         val repository = app.repository
+        if (!repository.isOverstayAlertsEnabled()) return Result.success()
         val profile = repository.getCurrentProfile() ?: return Result.success()
-        val (stays, plannedTrips) = repository.getSnapshotForActiveProfile()
-        val available = calculator.availableDaysOn(LocalDate.now(), stays)
+        val trips = repository.getTripsSnapshotForActiveProfile()
+        val today = LocalDate.now()
+        val available = calculator.availableDaysOnConfirmed(today, trips)
         val threshold = calculator.nextAlertThreshold(available) ?: return Result.success()
 
         val prefs = applicationContext.getSharedPreferences("schengen_prefs", Context.MODE_PRIVATE)
-        val key = "alert_${profile.id}_${LocalDate.now()}_$threshold"
+        val key = "alert_${profile.id}_${today}_$threshold"
         if (prefs.getBoolean(key, false)) return Result.success()
 
-        val overstayDate = calculator.firstPlannedOverstayDate(LocalDate.now(), stays, plannedTrips)
+        val overstayDate = calculator.firstOverstayDate(today, trips)
         val body = if (overstayDate != null) {
             "${profile.name}: $available days left. Planned trips first exceed the limit on $overstayDate."
         } else {

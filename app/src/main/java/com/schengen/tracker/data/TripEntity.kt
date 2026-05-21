@@ -5,10 +5,10 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
-    tableName = "stays",
+    tableName = "trips",
     indices = [Index("profileId")]
 )
-data class StayEntity(
+data class TripEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val profileId: Long,
     val entryDate: String,

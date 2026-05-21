@@ -4,120 +4,113 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 class SchengenCalculator {
-    fun usedDaysOn(
-        date: LocalDate,
-        stays: List<Stay>,
-        plannedTrips: List<PlannedTrip> = emptyList()
-    ): Int {
+
+    /**
+     * Computes the number of days physically present in Schengen during
+     * the trailing 180-day window ending on [date].
+     *
+     * - Trips with no exitDate (open / ongoing) are considered to extend up to
+     *   [date] (or the open trip's entryDate, whichever is later).
+     * - Future trips are included so the calculator can also run projections.
+     */
+    fun usedDaysOn(date: LocalDate, trips: List<Trip>): Int {
         val windowStart = date.minusDays(179)
         val occupiedDays = mutableSetOf<LocalDate>()
 
-        stays.forEach { stay ->
-            val stayEnd = stay.exitDate ?: date
-            addRange(
-                occupiedDays,
-                maxOf(stay.entryDate, windowStart),
-                minOf(stayEnd, date)
-            )
-        }
-
-        plannedTrips.forEach { trip ->
+        trips.forEach { trip ->
+            val effectiveEnd = trip.exitDate ?: date
             addRange(
                 occupiedDays,
                 maxOf(trip.entryDate, windowStart),
-                minOf(trip.exitDate, date)
+                minOf(effectiveEnd, date)
             )
         }
 
         return occupiedDays.size
     }
 
-    fun availableDaysOn(
-        date: LocalDate,
-        stays: List<Stay>,
-        plannedTrips: List<PlannedTrip> = emptyList()
-    ): Int {
-        return (90 - usedDaysOn(date, stays, plannedTrips)).coerceIn(0, 90)
-    }
+    fun availableDaysOn(date: LocalDate, trips: List<Trip>): Int =
+        (90 - usedDaysOn(date, trips)).coerceIn(0, 90)
 
-    fun nextDateWithMoreAvailability(
-        fromDate: LocalDate,
-        stays: List<Stay>,
-        plannedTrips: List<PlannedTrip> = emptyList()
-    ): LocalDate? {
-        val baseline = availableDaysOn(fromDate, stays, plannedTrips)
+    /**
+     * Days used at [date] counting only what has actually happened by [today].
+     * Trips that have not started yet are excluded entirely. Trips that are ongoing
+     * (exit date is `null` or in the future) are clipped to [today], so their
+     * already-elapsed portion still counts.
+     */
+    fun usedDaysOnConfirmed(
+        date: LocalDate,
+        trips: List<Trip>,
+        today: LocalDate = LocalDate.now()
+    ): Int = usedDaysOn(date, confirmedAsOf(trips, today))
+
+    fun availableDaysOnConfirmed(
+        date: LocalDate,
+        trips: List<Trip>,
+        today: LocalDate = LocalDate.now()
+    ): Int = (90 - usedDaysOnConfirmed(date, trips, today)).coerceIn(0, 90)
+
+    /**
+     * Returns the date of the latest exit of an upcoming or ongoing trip whose exit
+     * is strictly after [today]. Useful for "how many days will I have when my
+     * planned trips finish?" projections.
+     */
+    fun latestPlannedExit(today: LocalDate, trips: List<Trip>): LocalDate? =
+        trips.mapNotNull { it.exitDate }.filter { it.isAfter(today) }.maxOrNull()
+
+    private fun confirmedAsOf(trips: List<Trip>, today: LocalDate): List<Trip> =
+        trips.filter { !it.entryDate.isAfter(today) }
+            .map { trip ->
+                if (trip.exitDate != null && trip.exitDate.isAfter(today)) {
+                    trip.copy(exitDate = today)
+                } else trip
+            }
+
+    fun nextDateWithMoreAvailability(fromDate: LocalDate, trips: List<Trip>): LocalDate? {
+        val baseline = availableDaysOn(fromDate, trips)
         for (offset in 1..3650) {
             val candidate = fromDate.plusDays(offset.toLong())
-            if (availableDaysOn(candidate, stays, plannedTrips) > baseline) {
-                return candidate
-            }
+            if (availableDaysOn(candidate, trips) > baseline) return candidate
         }
         return null
     }
 
-    fun unlockedDaysInMonth(
-        month: YearMonth,
-        stays: List<Stay>,
-        plannedTrips: List<PlannedTrip> = emptyList()
-    ): Map<LocalDate, Int> {
+    fun unlockedDaysInMonth(month: YearMonth, trips: List<Trip>): Map<LocalDate, Int> {
         val unlockedDays = linkedMapOf<LocalDate, Int>()
         var cursor = month.atDay(1)
         val end = month.atEndOfMonth()
-
         while (!cursor.isAfter(end)) {
             val previousDate = cursor.minusDays(1)
-            val unlockedCount = availableDaysOn(cursor, stays, plannedTrips) -
-                availableDaysOn(previousDate, stays, plannedTrips)
-            if (unlockedCount > 0) {
-                unlockedDays[cursor] = unlockedCount
-            }
+            val unlockedCount = availableDaysOn(cursor, trips) - availableDaysOn(previousDate, trips)
+            if (unlockedCount > 0) unlockedDays[cursor] = unlockedCount
             cursor = cursor.plusDays(1)
         }
-
         return unlockedDays
     }
 
     fun occupiedDaysInMonth(
         month: YearMonth,
-        stays: List<Stay>,
+        trips: List<Trip>,
         todayDate: LocalDate = LocalDate.now()
     ): Set<LocalDate> {
         val start = month.atDay(1)
         val end = month.atEndOfMonth()
         val occupied = mutableSetOf<LocalDate>()
-
-        stays.forEach { stay ->
-            val stayEnd = stay.exitDate ?: todayDate
-            addRange(occupied, maxOf(stay.entryDate, start), minOf(stayEnd, end))
+        trips.forEach { trip ->
+            val effectiveEnd = trip.exitDate ?: todayDate
+            addRange(occupied, maxOf(trip.entryDate, start), minOf(effectiveEnd, end))
         }
         return occupied
     }
 
-    fun plannedDaysInMonth(month: YearMonth, plannedTrips: List<PlannedTrip>): Set<LocalDate> {
-        val start = month.atDay(1)
-        val end = month.atEndOfMonth()
-        val occupied = mutableSetOf<LocalDate>()
-
-        plannedTrips.forEach { trip ->
-            addRange(occupied, maxOf(trip.entryDate, start), minOf(trip.exitDate, end))
-        }
-        return occupied
-    }
-
-    fun firstPlannedOverstayDate(
-        today: LocalDate,
-        stays: List<Stay>,
-        plannedTrips: List<PlannedTrip>
-    ): LocalDate? {
-        if (plannedTrips.isEmpty()) return null
-        val firstDate = minOf(today, plannedTrips.minOf { it.entryDate })
-        val lastDate = plannedTrips.maxOf { it.exitDate }
+    fun firstOverstayDate(today: LocalDate, trips: List<Trip>): LocalDate? {
+        if (trips.isEmpty()) return null
+        val firstDate = minOf(today, trips.minOf { it.entryDate })
+        val lastDate = trips.mapNotNull { it.exitDate }.maxOrNull() ?: today.plusDays(180)
 
         var cursor = firstDate
         while (!cursor.isAfter(lastDate)) {
-            if (usedDaysOn(cursor, stays, plannedTrips) > 90) {
-                return cursor
-            }
+            if (usedDaysOn(cursor, trips) > 90) return cursor
             cursor = cursor.plusDays(1)
         }
         return null
@@ -128,6 +121,26 @@ class SchengenCalculator {
         return thresholds.lastOrNull { availableDays <= it }
     }
 
+    /**
+     * Computes a "trip status" for a single [trip]. Used by the trip card status badge.
+     * - WITHIN_LIMITS: usedDaysOn at trip's exit (or today if open) is below 80.
+     * - CLOSE_TO_LIMIT: between 80 and 90 inclusive.
+     * - OVER_LIMIT: above 90.
+     */
+    fun statusForTrip(
+        trip: Trip,
+        allTrips: List<Trip>,
+        today: LocalDate = LocalDate.now()
+    ): TripLimitStatus {
+        val evaluateOn = trip.exitDate ?: maxOf(trip.entryDate, today)
+        val used = usedDaysOn(evaluateOn, allTrips)
+        return when {
+            used > 90 -> TripLimitStatus.OVER_LIMIT
+            used >= 80 -> TripLimitStatus.CLOSE_TO_LIMIT
+            else -> TripLimitStatus.WITHIN_LIMITS
+        }
+    }
+
     private fun addRange(days: MutableSet<LocalDate>, start: LocalDate, end: LocalDate) {
         if (start.isAfter(end)) return
         var cursor = start
@@ -136,4 +149,10 @@ class SchengenCalculator {
             cursor = cursor.plusDays(1)
         }
     }
+}
+
+enum class TripLimitStatus {
+    WITHIN_LIMITS,
+    CLOSE_TO_LIMIT,
+    OVER_LIMIT
 }
