@@ -175,6 +175,61 @@ class TripRepositoryTest {
     }
 
     @Test
+    fun csvImportSwitchesActiveProfileSoRestoredTripsAreVisible() = runTest {
+        val dao = FakeTripDao()
+        val repository = TripRepository(dao, FakeSharedPreferences())
+        repository.ensureDefaultProfile()
+        val defaultProfileId = repository.observeActiveProfileId().first()!!
+
+        val csv = """
+            type,profile_name,passport_number,entry_date,exit_date,source,note,countries
+            PROFILE,John Doe,P-12345,,,,,
+            TRIP,John Doe,P-12345,2024-01-01,2024-01-05,MANUAL,Berlin trip,Germany
+            TRIP,John Doe,P-12345,2024-02-10,2024-02-14,MANUAL,Paris trip,France
+        """.trimIndent()
+
+        val importedRows = repository.importCsv(StringReader(csv).buffered())
+
+        assertEquals(3, importedRows)
+        val activeId = repository.observeActiveProfileId().first()!!
+        val activeTrips = repository.getTripsSnapshotForActiveProfile()
+        assertEquals(2, activeTrips.size)
+        assertEquals(listOf("Paris trip", "Berlin trip"), activeTrips.map { it.note })
+        assertFalse(
+            "Active profile should switch off the auto-created default placeholder",
+            activeId == defaultProfileId
+        )
+        val activeProfile = dao.getProfileById(activeId)!!
+        assertEquals("John Doe", activeProfile.name)
+        assertEquals("P-12345", activeProfile.passportNumber)
+        assertNull(
+            "Empty auto-created default profile should be cleaned up after restore",
+            dao.getProfileById(defaultProfileId)
+        )
+    }
+
+    @Test
+    fun csvImportPreservesActiveProfileWhenItReceivesTrips() = runTest {
+        val dao = FakeTripDao()
+        val repository = TripRepository(dao, FakeSharedPreferences())
+        repository.ensureDefaultProfile()
+        val defaultProfileId = repository.observeActiveProfileId().first()!!
+        repository.addTrip(date("2024-05-01"), date("2024-05-03"), note = "existing")
+
+        val csv = """
+            type,profile_name,passport_number,entry_date,exit_date,source,note,countries
+            TRIP,Primary passport,,2024-06-01,2024-06-04,MANUAL,added,Germany
+        """.trimIndent()
+
+        val importedRows = repository.importCsv(StringReader(csv).buffered())
+
+        assertEquals(1, importedRows)
+        assertEquals(defaultProfileId, repository.observeActiveProfileId().first())
+        val trips = repository.getTripsSnapshotForActiveProfile()
+        assertEquals(2, trips.size)
+    }
+
+    @Test
     fun csvImportSkipsMissingDatesAndFallsBackToManualSource() = runTest {
         val dao = FakeTripDao()
         val repository = TripRepository(dao, FakeSharedPreferences())

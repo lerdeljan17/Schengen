@@ -54,7 +54,7 @@ class TripRepository(
     suspend fun ensureDefaultProfile() {
         val profiles = dao.getAllProfiles()
         if (profiles.isEmpty()) {
-            val id = dao.insertProfile(ProfileEntity(name = "Primary passport", passportNumber = ""))
+            val id = dao.insertProfile(ProfileEntity(name = DEFAULT_PROFILE_NAME, passportNumber = ""))
             setActiveProfile(id)
         } else if (activeProfileIdFlow.value == null) {
             setActiveProfile(profiles.first().id)
@@ -241,7 +241,9 @@ class TripRepository(
         val lines = reader.readLines()
         if (lines.isEmpty()) return 0
 
+        val previousActiveProfileId = activeProfileIdFlow.value
         val profileByKey = mutableMapOf<String, Long>()
+        val orderedImportedProfileIds = mutableListOf<Long>()
         var importedRows = 0
 
         lines.drop(1).forEach { line ->
@@ -263,6 +265,7 @@ class TripRepository(
                     )
                 )
                 profileByKey[key] = profileId
+                orderedImportedProfileIds += profileId
             }
 
             val resolvedProfileId = profileId
@@ -310,8 +313,36 @@ class TripRepository(
             }
         }
 
-        if (activeProfileIdFlow.value == null) {
-            dao.getAllProfiles().firstOrNull()?.id?.let { setActiveProfile(it) }
+        // Make sure the user actually sees the data they restored: switch the
+        // active profile to one of the imported profiles (preferring one that
+        // actually received trips). Previously we only switched when no profile
+        // was active, but the app pre-creates a default profile at startup so
+        // that branch was unreachable, leaving the imported trips invisible.
+        val targetProfileId = orderedImportedProfileIds
+            .firstOrNull { dao.getAllTrips(it).isNotEmpty() }
+            ?: orderedImportedProfileIds.firstOrNull()
+            ?: dao.getAllProfiles().firstOrNull()?.id
+
+        if (targetProfileId != null && targetProfileId != activeProfileIdFlow.value) {
+            setActiveProfile(targetProfileId)
+        }
+
+        // If the previously active profile was the auto-created empty default
+        // and we've moved off of it, remove it so the restore doesn't leave a
+        // stray placeholder profile behind.
+        if (
+            previousActiveProfileId != null &&
+            previousActiveProfileId != activeProfileIdFlow.value
+        ) {
+            val previousProfile = dao.getProfileById(previousActiveProfileId)
+            if (
+                previousProfile != null &&
+                previousProfile.name == DEFAULT_PROFILE_NAME &&
+                previousProfile.passportNumber.isBlank() &&
+                dao.getAllTrips(previousActiveProfileId).isEmpty()
+            ) {
+                dao.deleteProfileById(previousActiveProfileId)
+            }
         }
 
         return importedRows
@@ -393,6 +424,7 @@ class TripRepository(
         private const val KEY_ACTIVE_PROFILE_ID = "active_profile_id"
         private const val KEY_LOCATION_TRACKING_ENABLED = "location_tracking_enabled"
         private const val KEY_OVERSTAY_ALERTS_ENABLED = "overstay_alerts_enabled"
+        private const val DEFAULT_PROFILE_NAME = "Primary passport"
 
         private fun encodeRow(values: List<String>): String =
             values.joinToString(",") { value ->
