@@ -18,6 +18,7 @@ import com.schengen.tracker.location.LocationTrackingScheduler
 import com.schengen.tracker.location.SchengenCountryCatalog
 import com.schengen.tracker.sync.DriveBackupService
 import com.schengen.tracker.sync.GoogleSignInManager
+import com.schengen.tracker.sync.SignInResult
 import com.schengen.tracker.sync.SyncResult
 import com.schengen.tracker.ui.theme.AppearanceMode
 import com.schengen.tracker.ui.theme.ThemePreferences
@@ -301,12 +302,36 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun signInIntent(): Intent = signInManager.signInIntent()
 
     fun handleSignInResult(data: Intent?) {
-        val account = signInManager.handleSignInResult(data)
-        if (account == null) {
-            _uiState.update { it.copy(syncErrorMessage = "Sign-in failed or was cancelled.") }
-        } else {
-            _uiState.update { it.copy(syncErrorMessage = null) }
+        when (val result = signInManager.handleSignInResult(data)) {
+            is SignInResult.Success -> {
+                _uiState.update { it.copy(syncErrorMessage = null) }
+            }
+
+            SignInResult.Cancelled -> {
+                _uiState.update { it.copy(syncErrorMessage = "Sign-in cancelled.") }
+            }
+
+            is SignInResult.Failure -> {
+                _uiState.update {
+                    it.copy(syncErrorMessage = signInErrorHint(result.statusCode, result.message))
+                }
+            }
         }
+    }
+
+    private fun signInErrorHint(statusCode: Int, message: String): String {
+        // See com.google.android.gms.common.api.CommonStatusCodes /
+        // GoogleSignInStatusCodes for the constants referenced below.
+        val hint = when (statusCode) {
+            10 -> "DEVELOPER_ERROR (10): the SHA-1 of the signing key for this APK isn't registered against an Android OAuth client for package com.schengen.tracker in Google Cloud Console, or the Google Drive API isn't enabled in that Cloud project."
+            7 -> "NETWORK_ERROR (7): no network connection. Check Wi-Fi / data and try again."
+            8 -> "INTERNAL_ERROR (8): Google Play Services hit an internal error. Try again, or update Play Services."
+            4 -> "SIGN_IN_REQUIRED (4): no eligible Google account on this device, or the previous session expired."
+            12500 -> "SIGN_IN_FAILED (12500): generic Google Sign-In failure. Most often this means the SHA-1 / package / OAuth client setup in Google Cloud Console doesn't match this APK."
+            12502 -> "SIGN_IN_CURRENTLY_IN_PROGRESS (12502): another sign-in attempt is already running. Wait a moment and retry."
+            else -> null
+        }
+        return if (hint != null) "Sign-in failed: $hint" else "Sign-in failed (code $statusCode): $message"
     }
 
     fun signOut() {

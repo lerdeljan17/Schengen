@@ -4,11 +4,15 @@ package com.schengen.tracker.sync
 
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.common.api.Scope
+import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
 import com.google.api.services.drive.DriveScopes
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,11 +43,36 @@ class GoogleSignInManager(context: Context) {
 
     fun signInIntent(): Intent = client.signInIntent
 
-    fun handleSignInResult(data: Intent?): GoogleSignInAccount? {
-        val result = GoogleSignIn.getSignedInAccountFromIntent(data)
-        return runCatching { result.getResult(com.google.android.gms.common.api.ApiException::class.java) }
-            .getOrNull()
-            ?.also { _account.value = it }
+    fun handleSignInResult(data: Intent?): SignInResult {
+        val task = GoogleSignIn.getSignedInAccountFromIntent(data)
+        return try {
+            val account = task.getResult(ApiException::class.java)
+            if (account == null) {
+                SignInResult.Failure(
+                    statusCode = CommonStatusCodes.ERROR,
+                    message = "Google returned no account."
+                )
+            } else {
+                _account.value = account
+                SignInResult.Success(account)
+            }
+        } catch (e: ApiException) {
+            Log.w(TAG, "Google sign-in failed: code=${e.statusCode} message=${e.message}", e)
+            when (e.statusCode) {
+                GoogleSignInStatusCodes.SIGN_IN_CANCELLED -> SignInResult.Cancelled
+                else -> SignInResult.Failure(
+                    statusCode = e.statusCode,
+                    message = e.localizedMessage
+                        ?: GoogleSignInStatusCodes.getStatusCodeString(e.statusCode)
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Google sign-in threw unexpected error", e)
+            SignInResult.Failure(
+                statusCode = CommonStatusCodes.ERROR,
+                message = e.localizedMessage ?: e.javaClass.simpleName
+            )
+        }
     }
 
     fun signOut(onComplete: () -> Unit = {}) {
@@ -61,4 +90,14 @@ class GoogleSignInManager(context: Context) {
     fun refresh() {
         _account.value = GoogleSignIn.getLastSignedInAccount(appContext)
     }
+
+    companion object {
+        private const val TAG = "GoogleSignInManager"
+    }
+}
+
+sealed interface SignInResult {
+    data class Success(val account: GoogleSignInAccount) : SignInResult
+    data object Cancelled : SignInResult
+    data class Failure(val statusCode: Int, val message: String) : SignInResult
 }
