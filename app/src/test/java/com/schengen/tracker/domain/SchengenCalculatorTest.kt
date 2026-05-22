@@ -64,6 +64,34 @@ class SchengenCalculatorTest {
     }
 
     @Test
+    fun nextDateWithMoreAvailability_ignoresFuturePlannedTripsForBaselineConsistency() {
+        // Regression for the May 2026 home-screen bug: a large purely-future planned
+        // trip used to push the "Next day with more days" recovery date months past
+        // the real answer, because the candidate-day evaluation counted those still
+        // hypothetical days while the displayed "Days available" baseline did not.
+        // The expected answer (Aug 14, 2026) is when the oldest in-window day
+        // (Feb 15, 2026) first rolls off the trailing 180-day window.
+        val today = date("2026-05-22")
+        val trips = listOf(
+            trip("2026-05-07", "2026-05-11", id = 1L),
+            trip("2026-04-19", "2026-05-01", id = 2L),
+            trip("2026-02-16", "2026-02-27", id = 3L),
+            trip("2026-02-15", "2026-02-15", id = 4L),
+            trip("2025-10-04", "2025-10-27", id = 5L),
+            trip("2026-05-20", "2026-06-06", id = 6L),
+            trip("2026-07-15", "2026-08-15", id = 7L)
+        )
+
+        val recovery = calculator.nextDateWithMoreAvailability(
+            fromDate = today,
+            trips = trips,
+            today = today
+        )
+
+        assertEquals(date("2026-08-14"), recovery)
+    }
+
+    @Test
     fun unlockedDaysInMonth_reportsDailyAvailabilityIncreases() {
         val unlocked = calculator.unlockedDaysInMonth(
             month = YearMonth.of(2024, 6),

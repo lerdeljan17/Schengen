@@ -66,11 +66,26 @@ class SchengenCalculator {
                 } else trip
             }
 
-    fun nextDateWithMoreAvailability(fromDate: LocalDate, trips: List<Trip>): LocalDate? {
-        val baseline = availableDaysOn(fromDate, trips)
+    /**
+     * Returns the next date on which the user will have *more* available days than
+     * they do at [fromDate], assuming no further trips are taken beyond what is
+     * already confirmed by [today] (i.e. ongoing trips are clipped to [today] and
+     * purely-future planned trips are excluded). This keeps the answer aligned
+     * with the "Days available" number on the home screen, which is also based on
+     * confirmed presence. Without this alignment, a large future planned trip
+     * (e.g. a month abroad) could artificially push the recovery date months out,
+     * because the candidate date's availability would be dragged down by those
+     * still-hypothetical days while the baseline was not.
+     */
+    fun nextDateWithMoreAvailability(
+        fromDate: LocalDate,
+        trips: List<Trip>,
+        today: LocalDate = fromDate
+    ): LocalDate? {
+        val baseline = availableDaysOnConfirmed(fromDate, trips, today)
         for (offset in 1..3650) {
             val candidate = fromDate.plusDays(offset.toLong())
-            if (availableDaysOn(candidate, trips) > baseline) return candidate
+            if (availableDaysOnConfirmed(candidate, trips, today) > baseline) return candidate
         }
         return null
     }
