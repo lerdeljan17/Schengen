@@ -1,8 +1,9 @@
 package com.schengen.tracker.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,7 +26,6 @@ import androidx.compose.ui.unit.dp
 import com.schengen.tracker.domain.Trip
 import com.schengen.tracker.ui.theme.DayNumberStyle
 import com.schengen.tracker.ui.theme.DaySubNumberStyle
-import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.TextStyle
@@ -38,26 +38,17 @@ fun MonthBlock(
     today: LocalDate,
     startWeekOnSunday: Boolean,
     onDayClick: (LocalDate) -> Unit,
+    onDayLongPress: (LocalDate) -> Unit,
     availableDaysProvider: (LocalDate) -> Int,
     modifier: Modifier = Modifier
 ) {
-    val weekDays = if (startWeekOnSunday) sundayFirst else mondayFirst
+    val weekDays = if (startWeekOnSunday) sundayFirstWeekdays else mondayFirstWeekdays
     val firstWeekday = weekDays.first()
 
-    val tripDays: Set<LocalDate> = remember(month, trips, today) {
-        val out = mutableSetOf<LocalDate>()
+    val tripDays = remember(month, trips, today) {
         val rangeStart = month.atDay(1).minusDays(7)
         val rangeEnd = month.atEndOfMonth().plusDays(7)
-        trips.forEach { trip ->
-            val effectiveEnd = trip.exitDate ?: today
-            var cursor = maxOf(trip.entryDate, rangeStart)
-            val finalEnd = minOf(effectiveEnd, rangeEnd)
-            while (!cursor.isAfter(finalEnd)) {
-                out.add(cursor)
-                cursor = cursor.plusDays(1)
-            }
-        }
-        out
+        tripDaysInRange(trips, today, rangeStart, rangeEnd)
     }
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -119,6 +110,7 @@ fun MonthBlock(
                             leftEdgePadding = if (leftConnects) 0.dp else 2.dp,
                             rightEdgePadding = if (rightConnects) 0.dp else 2.dp,
                             onClick = { onDayClick(date) },
+                            onLongClick = { onDayLongPress(date) },
                             availableDays = availableDaysProvider(date)
                         )
                     }
@@ -128,6 +120,7 @@ fun MonthBlock(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DayCell(
     modifier: Modifier,
@@ -139,6 +132,7 @@ private fun DayCell(
     leftEdgePadding: Dp,
     rightEdgePadding: Dp,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     availableDays: Int
 ) {
     val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.32f)
@@ -167,7 +161,7 @@ private fun DayCell(
                     shape = shape
                 ) else Modifier
             )
-            .clickable(onClick = onClick),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -186,38 +180,4 @@ private fun DayCell(
             )
         }
     }
-}
-
-private val mondayFirst = listOf(
-    DayOfWeek.MONDAY,
-    DayOfWeek.TUESDAY,
-    DayOfWeek.WEDNESDAY,
-    DayOfWeek.THURSDAY,
-    DayOfWeek.FRIDAY,
-    DayOfWeek.SATURDAY,
-    DayOfWeek.SUNDAY
-)
-
-private val sundayFirst = listOf(
-    DayOfWeek.SUNDAY,
-    DayOfWeek.MONDAY,
-    DayOfWeek.TUESDAY,
-    DayOfWeek.WEDNESDAY,
-    DayOfWeek.THURSDAY,
-    DayOfWeek.FRIDAY,
-    DayOfWeek.SATURDAY
-)
-
-private fun buildDayCells(month: YearMonth, firstWeekday: DayOfWeek): List<LocalDate?> {
-    val first = month.atDay(1)
-    val leadingEmpty = (first.dayOfWeek.value - firstWeekday.value + 7) % 7
-    val totalDays = month.lengthOfMonth()
-
-    val cells = mutableListOf<LocalDate?>()
-    repeat(leadingEmpty) { cells.add(null) }
-    for (day in 1..totalDays) {
-        cells.add(month.atDay(day))
-    }
-    while (cells.size % 7 != 0) cells.add(null)
-    return cells
 }

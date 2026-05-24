@@ -32,6 +32,27 @@ class SchengenCalculator {
     fun availableDaysOn(date: LocalDate, trips: List<Trip>): Int =
         (90 - usedDaysOn(date, trips)).coerceIn(0, 90)
 
+    fun rollingWindowStart(date: LocalDate): LocalDate = date.minusDays(179)
+
+    fun rollingWindowEnd(date: LocalDate): LocalDate = date
+
+    fun tripsInWindow(date: LocalDate, trips: List<Trip>): List<Trip> {
+        val windowStart = rollingWindowStart(date)
+        return trips.filter { trip ->
+            val effectiveEnd = trip.exitDate ?: date
+            !effectiveEnd.isBefore(windowStart) && !trip.entryDate.isAfter(date)
+        }.sortedBy { it.entryDate }
+    }
+
+    fun daysCountedInWindow(date: LocalDate, trip: Trip): Int {
+        val windowStart = rollingWindowStart(date)
+        val effectiveEnd = trip.exitDate ?: date
+        val rangeStart = maxOf(trip.entryDate, windowStart)
+        val rangeEnd = minOf(effectiveEnd, date)
+        if (rangeStart.isAfter(rangeEnd)) return 0
+        return rangeStart.until(rangeEnd).days + 1
+    }
+
     /**
      * Days used at [date] counting only what has actually happened by [today].
      * Trips that have not started yet are excluded entirely. Trips that are ongoing

@@ -245,6 +245,43 @@ class SchengenCalculatorTest {
     }
 
     @Test
+    fun rollingWindowStart_is179DaysBeforeDate() {
+        val date = date("2026-06-12")
+        assertEquals(date("2025-12-15"), calculator.rollingWindowStart(date))
+        assertEquals(date, calculator.rollingWindowEnd(date))
+    }
+
+    @Test
+    fun tripsInWindow_returnsTripsOverlappingRollingWindow() {
+        val date = date("2026-06-12")
+        val trips = listOf(
+            trip("2025-10-01", "2025-10-10", id = 1L),
+            trip("2026-04-19", "2026-05-01", id = 2L),
+            trip("2026-07-01", "2026-07-10", id = 3L)
+        )
+
+        val inWindow = calculator.tripsInWindow(date, trips)
+
+        assertEquals(listOf(1L, 2L), inWindow.map { it.id })
+    }
+
+    @Test
+    fun daysCountedInWindow_clipsTripRangeToWindow() {
+        val date = date("2026-06-12")
+        val trip = trip("2026-04-19", "2026-05-01", id = 1L)
+
+        assertEquals(13, calculator.daysCountedInWindow(date, trip))
+    }
+
+    @Test
+    fun daysCountedInWindow_returnsZeroWhenTripIsOutsideWindow() {
+        val date = date("2026-06-12")
+        val trip = trip("2025-01-01", "2025-01-05", id = 1L)
+
+        assertEquals(0, calculator.daysCountedInWindow(date, trip))
+    }
+
+    @Test
     fun statusForTrip_reflectsUsageAtTripEndDate() {
         val withinLimits = calculator.statusForTrip(
             trip = trip("2024-04-01", "2024-04-10", id = 1L),
