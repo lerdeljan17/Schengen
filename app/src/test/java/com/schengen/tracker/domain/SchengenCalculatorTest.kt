@@ -255,7 +255,7 @@ class SchengenCalculatorTest {
     fun tripsInWindow_returnsTripsOverlappingRollingWindow() {
         val date = date("2026-06-12")
         val trips = listOf(
-            trip("2025-10-01", "2025-10-10", id = 1L),
+            trip("2025-12-20", "2025-12-25", id = 1L),
             trip("2026-04-19", "2026-05-01", id = 2L),
             trip("2026-07-01", "2026-07-10", id = 3L)
         )
