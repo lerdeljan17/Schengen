@@ -32,6 +32,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.schengen.tracker.data.EntrySource
 import com.schengen.tracker.domain.Trip
 import com.schengen.tracker.ui.AppViewModel
 import com.schengen.tracker.ui.components.AppTopBar
@@ -63,18 +64,25 @@ fun CalendarScreen(
     }
     val initialIndex = PAST_MONTHS
 
-    val availableCache = remember(trips) { mutableMapOf<LocalDate, Int>() }
-    val availableProvider: (LocalDate) -> Int = { date ->
-        availableCache.getOrPut(date) {
-            calculator.availableDaysOn(date, trips)
-        }
-    }
-
     var viewMode by remember { mutableStateOf(CalendarViewMode.Month) }
+    var selectedDate by remember { mutableStateOf<LocalDate?>(null) }
+    var addingTrip by remember { mutableStateOf(false) }
+    var newTripEntryDate by remember { mutableStateOf<LocalDate?>(null) }
+    var newTripExitDate by remember { mutableStateOf<LocalDate?>(null) }
     var editingTrip by remember { mutableStateOf<Trip?>(null) }
     var dayDetailsDate by remember { mutableStateOf<LocalDate?>(null) }
     var yearViewInitialPage by remember { mutableIntStateOf(initialIndex) }
     var yearScrollTrigger by remember { mutableIntStateOf(0) }
+
+    val availableCache = remember(trips, selectedDate) { mutableMapOf<LocalDate, Int>() }
+    val availableProvider: (LocalDate) -> Int = { date ->
+        availableCache.getOrPut(date) {
+            val effectiveTrips = selectedDate?.takeIf { !date.isBefore(it) }?.let { entry ->
+                trips + draftTrip(entry, date)
+            } ?: trips
+            calculator.availableDaysOn(date, effectiveTrips)
+        }
+    }
 
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
@@ -96,7 +104,18 @@ fun CalendarScreen(
             !date.isBefore(trip.entryDate) && !date.isAfter(end)
         }
         if (tripForDay != null) {
+            selectedDate = null
             editingTrip = tripForDay
+            return
+        }
+        val first = selectedDate
+        if (first == null) {
+            selectedDate = date
+        } else {
+            selectedDate = null
+            newTripEntryDate = minOf(first, date)
+            newTripExitDate = maxOf(first, date)
+            addingTrip = true
         }
     }
 
@@ -123,6 +142,7 @@ fun CalendarScreen(
                     )
                 }
                 IconButton(onClick = {
+                    selectedDate = null
                     if (viewMode == CalendarViewMode.Month) {
                         yearViewInitialPage = listState.firstVisibleItemIndex
                         viewMode = CalendarViewMode.Year
@@ -168,7 +188,8 @@ fun CalendarScreen(
                             startWeekOnSunday = themeState.startWeekOnSunday,
                             onDayClick = ::handleDayClick,
                             onDayLongPress = { dayDetailsDate = it },
-                            availableDaysProvider = availableProvider
+                            availableDaysProvider = availableProvider,
+                            selectedDate = selectedDate
                         )
                     }
                     item { Spacer(Modifier.height(8.dp)) }
@@ -187,6 +208,7 @@ fun CalendarScreen(
                         viewMode = CalendarViewMode.Month
                         scrollToMonth(month)
                     },
+                    selectedDate = selectedDate,
                     contentPadding = PaddingValues(
                         start = 12.dp,
                         end = 12.dp,
@@ -211,6 +233,25 @@ fun CalendarScreen(
         )
     }
 
+    if (addingTrip) {
+        TripDialog(
+            existingTrip = null,
+            initialEntryDate = newTripEntryDate,
+            initialExitDate = newTripExitDate,
+            onDismiss = {
+                addingTrip = false
+                newTripEntryDate = null
+                newTripExitDate = null
+            },
+            onSave = { entryDate, exitDate, source, note, countries ->
+                viewModel.addTrip(entryDate, exitDate, source, note, countries)
+                addingTrip = false
+                newTripEntryDate = null
+                newTripExitDate = null
+            }
+        )
+    }
+
     editingTrip?.let { trip ->
         TripDialog(
             existingTrip = trip,
@@ -226,6 +267,16 @@ fun CalendarScreen(
         )
     }
 }
+
+private fun draftTrip(entry: LocalDate, exit: LocalDate) = Trip(
+    id = -1L,
+    profileId = -1L,
+    entryDate = entry,
+    exitDate = exit,
+    source = EntrySource.MANUAL,
+    note = "",
+    countries = emptyList()
+)
 
 private const val PAST_MONTHS = 6
 private const val FUTURE_MONTHS = 18

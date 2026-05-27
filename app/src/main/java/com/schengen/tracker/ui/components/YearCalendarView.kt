@@ -48,6 +48,7 @@ fun YearCalendarView(
     onDayClick: (LocalDate) -> Unit,
     onDayLongPress: (LocalDate) -> Unit,
     onMonthClick: (YearMonth) -> Unit,
+    selectedDate: LocalDate? = null,
     contentPadding: PaddingValues,
     initialPageIndex: Int,
     scrollTrigger: Int = 0,
@@ -87,7 +88,8 @@ fun YearCalendarView(
                         startWeekOnSunday = startWeekOnSunday,
                         onDayClick = onDayClick,
                         onDayLongPress = onDayLongPress,
-                        onMonthClick = { onMonthClick(month) }
+                        onMonthClick = { onMonthClick(month) },
+                        selectedDate = selectedDate
                     )
                 }
             }
@@ -105,6 +107,7 @@ fun MiniMonthBlock(
     onDayClick: (LocalDate) -> Unit,
     onDayLongPress: (LocalDate) -> Unit,
     onMonthClick: () -> Unit,
+    selectedDate: LocalDate? = null,
     modifier: Modifier = Modifier
 ) {
     val weekDays = if (startWeekOnSunday) sundayFirstWeekdays else mondayFirstWeekdays
@@ -170,6 +173,7 @@ fun MiniMonthBlock(
                                 date = date,
                                 isToday = date == today,
                                 isInTrip = inTrip,
+                                isSelected = !inTrip && date == selectedDate,
                                 leftRadius = if (!inTrip || leftConnects) 0.dp else 4.dp,
                                 rightRadius = if (!inTrip || rightConnects) 0.dp else 4.dp,
                                 leftEdgePadding = if (leftConnects) 0.dp else 1.dp,
@@ -192,6 +196,7 @@ private fun MiniDayCell(
     date: LocalDate,
     isToday: Boolean,
     isInTrip: Boolean,
+    isSelected: Boolean,
     leftRadius: Dp,
     rightRadius: Dp,
     leftEdgePadding: Dp,
@@ -200,6 +205,7 @@ private fun MiniDayCell(
     onLongClick: () -> Unit
 ) {
     val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.32f)
+    val selectedColor = MaterialTheme.colorScheme.primaryContainer
     val shape = if (isInTrip) {
         RoundedCornerShape(
             topStart = leftRadius,
@@ -216,7 +222,11 @@ private fun MiniDayCell(
             .fillMaxSize()
             .padding(start = leftEdgePadding, end = rightEdgePadding)
             .background(
-                color = if (isInTrip) highlightColor else androidx.compose.ui.graphics.Color.Transparent,
+                color = when {
+                    isInTrip -> highlightColor
+                    isSelected -> selectedColor
+                    else -> androidx.compose.ui.graphics.Color.Transparent
+                },
                 shape = shape
             )
             .then(
@@ -236,7 +246,11 @@ private fun MiniDayCell(
         Text(
             text = date.dayOfMonth.toString(),
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-            color = MaterialTheme.colorScheme.onSurface,
+            color = if (isSelected) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
             textAlign = TextAlign.Center
         )
     }

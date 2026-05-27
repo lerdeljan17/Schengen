@@ -46,17 +46,19 @@ fun TripDialog(
         note: String,
         countries: List<String>
     ) -> Unit,
-    onDelete: (() -> Unit)? = null
+    onDelete: (() -> Unit)? = null,
+    initialEntryDate: LocalDate? = null,
+    initialExitDate: LocalDate? = null
 ) {
     val today = LocalDate.now()
-    var entryDate by remember(existingTrip?.id) {
-        mutableStateOf(existingTrip?.entryDate ?: today)
+    var entryDate by remember(existingTrip?.id, initialEntryDate) {
+        mutableStateOf(existingTrip?.entryDate ?: initialEntryDate ?: today)
     }
     var hasExitDate by remember(existingTrip?.id) {
         mutableStateOf(existingTrip?.exitDate != null || existingTrip == null)
     }
-    var exitDate by remember(existingTrip?.id) {
-        mutableStateOf(existingTrip?.exitDate ?: today)
+    var exitDate by remember(existingTrip?.id, initialExitDate) {
+        mutableStateOf(existingTrip?.exitDate ?: initialExitDate ?: today)
     }
     var source by remember(existingTrip?.id) {
         mutableStateOf(existingTrip?.source ?: EntrySource.MANUAL)

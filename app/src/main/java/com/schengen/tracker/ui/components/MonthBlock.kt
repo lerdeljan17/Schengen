@@ -40,6 +40,7 @@ fun MonthBlock(
     onDayClick: (LocalDate) -> Unit,
     onDayLongPress: (LocalDate) -> Unit,
     availableDaysProvider: (LocalDate) -> Int,
+    selectedDate: LocalDate? = null,
     modifier: Modifier = Modifier
 ) {
     val weekDays = if (startWeekOnSunday) sundayFirstWeekdays else mondayFirstWeekdays
@@ -105,6 +106,7 @@ fun MonthBlock(
                             date = date,
                             isToday = date == today,
                             isInTrip = inTrip,
+                            isSelected = !inTrip && date == selectedDate,
                             leftRadius = topRadius,
                             rightRadius = rightRadius,
                             leftEdgePadding = if (leftConnects) 0.dp else 2.dp,
@@ -127,6 +129,7 @@ private fun DayCell(
     date: LocalDate,
     isToday: Boolean,
     isInTrip: Boolean,
+    isSelected: Boolean,
     leftRadius: Dp,
     rightRadius: Dp,
     leftEdgePadding: Dp,
@@ -136,8 +139,15 @@ private fun DayCell(
     availableDays: Int
 ) {
     val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.32f)
-    val numberColor = MaterialTheme.colorScheme.onSurface
-    val subColor = MaterialTheme.colorScheme.primary
+    val selectedColor = MaterialTheme.colorScheme.primaryContainer
+    val numberColor = when {
+        isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val subColor = when {
+        isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.primary
+    }
 
     val shape = if (isInTrip) RoundedCornerShape(
         topStart = leftRadius,
@@ -151,7 +161,11 @@ private fun DayCell(
             .fillMaxSize()
             .padding(start = leftEdgePadding, end = rightEdgePadding, top = 2.dp, bottom = 2.dp)
             .background(
-                color = if (isInTrip) highlightColor else androidx.compose.ui.graphics.Color.Transparent,
+                color = when {
+                    isInTrip -> highlightColor
+                    isSelected -> selectedColor
+                    else -> androidx.compose.ui.graphics.Color.Transparent
+                },
                 shape = shape
             )
             .then(
