@@ -88,7 +88,14 @@ fun TripDialog(
             }) { Text("Save") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (existingTrip != null && onDelete != null) {
+                    TextButton(onClick = onDelete) {
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
         },
         title = { Text(if (existingTrip == null) "Add trip" else "Edit trip") },
         text = {
@@ -145,11 +152,6 @@ fun TripDialog(
                             onClick = { source = EntrySource.AUTO },
                             enabled = source != EntrySource.AUTO
                         ) { Text("Auto") }
-                    }
-                    if (onDelete != null) {
-                        TextButton(onClick = onDelete) {
-                            Text("Delete trip", color = MaterialTheme.colorScheme.error)
-                        }
                     }
                 }
                 error?.let {

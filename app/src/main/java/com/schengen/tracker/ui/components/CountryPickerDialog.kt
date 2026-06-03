@@ -9,10 +9,15 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -24,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.schengen.tracker.location.SchengenCountryCatalog
 import com.schengen.tracker.ui.screens.TextHelpers
 
@@ -104,17 +110,36 @@ fun CountrySelectionSummary(
     selectedCountryCodes: List<String>,
     onPickCountries: () -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            text = if (selectedCountryCodes.isEmpty()) {
-                "Countries: none selected"
-            } else {
-                "Countries: ${TextHelpers.formatCountryNames(selectedCountryCodes)}"
-            },
-            style = MaterialTheme.typography.bodyMedium
-        )
-        TextButton(onClick = onPickCountries) {
-            Text(if (selectedCountryCodes.isEmpty()) "Select countries" else "Edit countries")
+    Surface(
+        onClick = onPickCountries,
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val flags = selectedCountryCodes.take(3).joinToString("") { countryCodeToFlagEmoji(it) }
+            Text(
+                text = if (flags.isNotEmpty()) flags else "🌍",
+                fontSize = 20.sp
+            )
+            Text(
+                text = if (selectedCountryCodes.isEmpty()) {
+                    "Select countries"
+                } else {
+                    TextHelpers.formatCountryNames(selectedCountryCodes)
+                },
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = Icons.Filled.ArrowDropDown,
+                contentDescription = "Select countries",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
