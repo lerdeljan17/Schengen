@@ -70,6 +70,7 @@ fun TripDialog(
     var showCountryPicker by remember { mutableStateOf(false) }
     var showEntryPicker by remember { mutableStateOf(false) }
     var showExitPicker by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
     val formatter = TextHelpers.dateFormatter
@@ -90,7 +91,7 @@ fun TripDialog(
         dismissButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (existingTrip != null && onDelete != null) {
-                    TextButton(onClick = onDelete) {
+                    TextButton(onClick = { showDeleteConfirm = true }) {
                         Text("Delete", color = MaterialTheme.colorScheme.error)
                     }
                 }
@@ -121,6 +122,18 @@ fun TripDialog(
                         )
                     }
                 }
+                val durationText = if (hasExitDate) {
+                    val end = maxOf(entryDate, exitDate)
+                    TextHelpers.formatDayCount(TextHelpers.inclusiveDayCount(entryDate, end))
+                } else {
+                    val end = maxOf(entryDate, today)
+                    "${TextHelpers.formatDayCount(TextHelpers.inclusiveDayCount(entryDate, end))} so far"
+                }
+                Text(
+                    text = durationText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
@@ -193,6 +206,25 @@ fun TripDialog(
         ) {
             DatePicker(state = pickerState)
         }
+    }
+
+    if (showDeleteConfirm && onDelete != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    onDelete()
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+            },
+            title = { Text("Delete trip?") },
+            text = { Text("This trip will be permanently deleted.") }
+        )
     }
 
     if (showExitPicker) {
