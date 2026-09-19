@@ -4,11 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -41,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -158,7 +161,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun AvailableDaysHero(
+internal fun AvailableDaysHero(
     availableDays: Int,
     afterPlannedDays: Int?,
     afterPlannedDate: LocalDate?,
@@ -194,23 +197,23 @@ private fun AvailableDaysHero(
             )
             Spacer(Modifier.height(16.dp))
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 StatChip(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).fillMaxHeight().testTag("used-days-stat"),
                     label = "Used",
                     value = "$usedDays days"
                 )
                 if (afterPlannedDays != null && afterPlannedDate != null) {
                     StatChip(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).fillMaxHeight().testTag("window-stat"),
                         label = "After planned trips",
                         value = "$afterPlannedDays left"
                     )
                 } else {
                     StatChip(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).fillMaxHeight().testTag("window-stat"),
                         label = "Window",
                         value = "180 days"
                     )
@@ -235,6 +238,7 @@ private fun StatChip(modifier: Modifier = Modifier, label: String, value: String
         ) {
             Text(
                 text = label.uppercase(),
+                textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

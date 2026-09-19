@@ -15,9 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -71,26 +69,29 @@ fun YearCalendarView(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         items(pages.size, key = { pages[it].first().toString() }) { pageIndex ->
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(520.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                userScrollEnabled = false
-            ) {
-                items(pages[pageIndex], key = { it.toString() }) { month ->
-                    MiniMonthBlock(
-                        month = month,
-                        trips = trips,
-                        today = today,
-                        startWeekOnSunday = startWeekOnSunday,
-                        onDayClick = onDayClick,
-                        onDayLongPress = onDayLongPress,
-                        onMonthClick = { onMonthClick(month) },
-                        selectedDate = selectedDate
-                    )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                pages[pageIndex].chunked(3).forEach { rowMonths ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        rowMonths.forEach { month ->
+                            MiniMonthBlock(
+                                month = month,
+                                trips = trips,
+                                today = today,
+                                startWeekOnSunday = startWeekOnSunday,
+                                onDayClick = onDayClick,
+                                onDayLongPress = onDayLongPress,
+                                onMonthClick = { onMonthClick(month) },
+                                selectedDate = selectedDate,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        repeat(3 - rowMonths.size) {
+                            Box(modifier = Modifier.weight(1f))
+                        }
+                    }
                 }
             }
         }
@@ -122,6 +123,7 @@ fun MiniMonthBlock(
     Surface(
         modifier = modifier
             .fillMaxWidth()
+            .testTag("month-$month")
             .clickable(onClick = onMonthClick),
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface
